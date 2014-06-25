@@ -14,6 +14,9 @@ use Zend\Json\Json;
 use My\Common\Controller\Action;
 use My\Common\MongoCollection;
 use Psr\Log\AbstractLogger;
+use Aws\CloudFront\Exception\Exception;
+use Zend\Serializer\Serializer;
+use MyProject\Proxies\__CG__\OtherProject\Proxies\__CG__\stdClass;
 
 class DataController extends Action
 {
@@ -125,6 +128,13 @@ class DataController extends Action
     private $_mapping;
 
     /**
+     * 索引管理集合
+     *
+     * @var object
+     */
+    private $_index;
+
+    /**
      * 当集合为树状集合时，存储父节点数据的集合名称
      *
      * @var string
@@ -153,6 +163,31 @@ class DataController extends Action
     private $_maxDepth = 1000;
 
     /**
+     * Gearman客户端对象
+     *
+     * @var object
+     */
+    private $_gmClient = null;
+    
+    /**
+     * 保留字段
+     * @var array
+     */
+    private $_filter = array(
+        'start',
+        'page',
+        'limit',
+        '__removed__',
+        '__modify_time__',
+        '__old_id__',
+        '__old_data__',
+        '__project_id__',
+        '__collection_id__',
+        '__plugin_id__',
+        '__plugin_collection_id__'
+    );
+
+    /**
      * 初始化函数
      *
      * @see \My\Common\ActionController::init()
@@ -177,6 +212,7 @@ class DataController extends Action
         $this->_order = $this->model('Idatabase\Model\Order');
         $this->_mapping = $this->model('Idatabase\Model\Mapping');
         $this->_statistic = $this->model('Idatabase\Model\Statistic');
+        $this->_index = $this->model('Idatabase\Model\Index');
         
         // 检查必要的参数
         if (empty($this->_project_id)) {
@@ -213,6 +249,12 @@ class DataController extends Action
         } else {
             $this->_data = $this->collection($this->_collection_name);
         }
+        
+        // 自动化为集合创建索引
+        $this->_index->autoCreateIndexes(isset($mapCollection['collection']) ? $mapCollection['collection'] : $this->_collection_id);
+        
+        // 建立gearman客户端连接
+        $this->_gmClient = $this->gearman()->client();
     }
 
     /**
@@ -264,43 +306,130 @@ class DataController extends Action
             $sort = $this->defaultOrder();
         }
         
-        $cursor = $this->_data->find($query, $this->_fields);
-        $total = $cursor->count();
-        if ($total > 0) {
-            $cursor->sort($sort);
-            if ($action !== 'excel') {
-                $cursor->skip($start)->limit($limit);
+        if (! empty($this->_schema['2d'])) {
+            $keys2d = array_keys($this->_schema['2d']);
+            foreach ($keys2d as $field2d) {
+                if (isset($_REQUEST[$field2d])) {
+                    $lng = isset($_REQUEST[$field2d]['lng']) ? floatval(trim($_REQUEST[$field2d]['lng'])) : 0;
+                    $lat = isset($_REQUEST[$field2d]['lat']) ? floatval(trim($_REQUEST[$field2d]['lat'])) : 0;
+                    $distance = ! empty($_REQUEST[$field2d]['distance']) ? floatval($_REQUEST[$field2d]['distance']) : 1;
+                    
+                    $pipeline = array(
+                        array(
+                            '$geoNear' => array(
+                                'near' => array(
+                                    $lng,
+                                    $lat
+                                ),
+                                'limit' => 1000,
+                                'spherical' => true,
+                                'distanceMultiplier' => 6371 * 1000,
+                                'query' => $query,
+                                'distanceField' => '__DISTANCE__'
+                            )
+                        ),
+                        array(
+                            '$match' => array(
+                                '__DISTANCE__' => array(
+                                    '$lte' => $distance * 1000
+                                )
+                            )
+                        )
+                    );
+                    $rst = $this->_data->aggregate($pipeline);
+                    if (isset($rst['result'])) {
+                        return $this->rst($rst['result'], count($rst['result']), true);
+                    }
+                }
             }
+        }
+        
+        $fields = $this->_fields;
+        if ($action == 'excel') {
+            if (empty($this->_schema['export'])) {
+                return $this->msg(true, '请联系管理员，设定允许导出数据字段的权限');
+            }
+            $fields = $this->_schema['export'];
+        }
+        // 开始修正录入点.的子属性节点时，出现覆盖父节点数据的问题。modify20140604
+        array_walk($fields, function ($value, $key) use(&$fields)
+        {
+            if (strpos($key, '.') !== false) {
+                $tmp = explode('.', $key);
+                if (! isset($fields[$tmp[0]])) {
+                    $fields[$tmp[0]] = true;
+                }
+                unset($fields[$key]);
+            }
+        });
+        // 结束修正录入点.的子属性节点时，出现覆盖父节点数据的问题。modify20140604
+        
+        // 增加gearman导出数据统计
+        if ($action == 'excel') {
+            $wait = $this->params()->fromQuery('wait', false);
+            $download = $this->params()->fromQuery('download', false);
             
-            $datas = iterator_to_array($cursor, false);
-            $datas = $this->comboboxSelectedValues($datas);
+            $obj = new \stdClass();
+            $obj->_collection_id = $this->_collection_id;
+            $obj->_rshCollection = $this->_rshCollection;
+            $obj->_title = $this->_title;
+            $obj->_project_id = $this->_project_id;
             
-            if ($action == 'excel') {
-                // 在导出数据的情况下，将关联数据显示为关联集合的显示字段数据
-                $this->dealRshData();
-                // 结束
-                convertToPureArray($datas);
-                array_walk($datas, function (&$value, $key)
-                {
-                    ksort($value);
-                    array_walk($value, function (&$cell, $field)
-                    {
-                        if (isset($this->_rshData[$field])) {
-                            $cell = $this->_rshData[$field][$cell];
-                        }
-                    });
-                });
+            $exportGearmanKey = md5($this->_collection_id . serialize($query));
+            if ($this->cache($exportGearmanKey) !== null) {
+                return $this->msg(false, 'Excel表格创建中……');
+            } elseif ($wait) {
+                return $this->msg(true, 'Excel创建成功');
+            } elseif ($download) {
+                $params = array();
+                $params['collection_id'] = $this->_collection_id;
+                $params['query'] = $query;
+                $params['fields'] = $fields;
+                $params['scope'] = $obj;
+                $workload = serialize($params);
+                $exportKey = md5($workload);
                 
-                $excel = array(
-                    'title' => array_values($this->_title),
-                    'result' => $datas
-                );
-                arrayToExcel($excel);
+                $binary = $this->cache($exportKey);
+                header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+                header('Content-Disposition: attachment;filename="' . $exportGearmanKey . '.xlsx"');
+                header('Cache-Control: max-age=0');
+                echo $binary;
+                exit();
+            } else {
+                $params = array();
+                $params['collection_id'] = $this->_collection_id;
+                $params['query'] = $query;
+                $params['fields'] = $fields;
+                
+                $params['scope'] = $obj;
+                $workload = serialize($params);
+                $exportKey = md5($workload);
+                
+                $jobHandle = $this->_gmClient->doBackground('dataExport', $workload, $exportKey);
+                $stat = $this->_gmClient->jobStatus($jobHandle);
+                if (isset($stat[0]) && $stat[0]) {
+                    $this->cache()->save(true, $exportGearmanKey, 600);
+                }
+                return $this->msg(false, '请求被受理');
             }
-            return $this->rst($datas, $total, true);
-        } else {
+        }
+        
+        $cursor = $this->_data->find($query, $fields);
+        if (! ($cursor instanceof \MongoCursor)) {
+            throw new \Exception('无效的$cursor');
+        }
+        
+        $total = $cursor->count();
+        if ($total <= 0) {
             return $this->rst(array(), 0, true);
         }
+        
+        $cursor->sort($sort)->skip($start)->limit($limit);
+        
+        $datas = iterator_to_array($cursor, false);
+        $datas = $this->comboboxSelectedValues($datas);
+
+        return $this->rst($datas, $total, true);
     }
 
     /**
@@ -315,6 +444,7 @@ class DataController extends Action
     public function statisticAction()
     {
         $action = $this->params()->fromQuery('action', null);
+        $wait = $this->params()->fromQuery('wait', null);
         $export = filter_var($this->params()->fromQuery('export', false));
         $statistic_id = $this->params()->fromQuery('__STATISTIC_ID__', null);
         
@@ -333,10 +463,58 @@ class DataController extends Action
             throw new \Exception('统计方法不存在');
         }
         
+        $map = array(
+            '_id' => $statisticInfo['xAxisField']
+        );
+        
         try {
             $query = array();
             $query = $this->searchCondition();
-            $rst = mapReduce($this->_data, $statisticInfo, $query);
+            
+            // 增加默认统计条件开始
+            if (! empty($statisticInfo['defaultQuery'])) {
+                if (isset($query['$and'])) {
+                    $query['$and'][] = $statisticInfo['defaultQuery'];
+                } else {
+                    $query = array_merge($query, $statisticInfo['defaultQuery']);
+                }
+            }
+            // 增加默认统计条件结束
+            
+            // 采用数据导出结果
+            if ($export) {
+                if ($this->cache($statistic_id) !== null) {
+                    return $this->msg(true, '重新统计中');
+                } else {
+                    $rst = $this->collection()->secondary($statistic_id, DB_MAPREDUCE, DEFAULT_CLUSTER);
+                    $rst->setNoAppendQuery(true);
+                }
+            } else {
+                if ($this->cache($statistic_id) !== null) {
+                    return $this->msg(true, '统计进行中……');
+                } elseif ($wait) {
+                    $rst = $this->collection()->secondary($statistic_id, DB_MAPREDUCE, DEFAULT_CLUSTER);
+                    if ($rst instanceof MongoCollection) {
+                        $rst->setNoAppendQuery(true);
+                    }
+                } else {
+                    // 任务交给后台worker执行
+                    $params = array(
+                        'out' => $statistic_id,
+                        'dataCollection' => $this->_collection_name,
+                        'statisticInfo' => $statisticInfo,
+                        'query' => $query,
+                        'method' => 'replace'
+                    );
+                    $jobHandle = $this->_gmClient->doBackground('mapreduce', serialize($params), $statistic_id);
+                    $stat = $this->_gmClient->jobStatus($jobHandle);
+                    if (isset($stat[0]) && $stat[0]) {
+                        $this->cache()->save(true, $statistic_id, 60);
+                    }
+                    return $this->msg(true, '统计请求被受理');
+                }
+            }
+            // $rst = mapReduce($statistic_id, $this->_data, $statisticInfo, $query);
             
             if (is_array($rst) && isset($rst['ok']) && $rst['ok'] === 0) {
                 switch ($rst['code']) {
@@ -363,7 +541,19 @@ class DataController extends Action
             $outCollectionName = $rst->getName(); // 输出集合名称
             
             if ($export) {
-                $datas = $rst->findAll(array());
+                $sort = array(
+                    '_id' => 1
+                );
+                if ($statisticInfo['seriesType'] != 'line') {
+                    $sort = array(
+                        'value' => - 1
+                    );
+                }
+                
+                $datas = $rst->findAll(array(), $sort);
+                
+                $datas = $this->replaceRshData($datas, $map);
+                
                 $excel = array();
                 $excel['title'] = array(
                     '键',
@@ -372,15 +562,52 @@ class DataController extends Action
                 $excel['result'] = $datas;
                 arrayToExcel($excel);
             } else {
-                $limit = intval($statisticInfo['maxShowNumber']) > 0 ? intval($statisticInfo['maxShowNumber']) : 100;
-                $datas = $rst->findAll(array(), array(
-                    'value' => - 1
-                ), 0, $limit);
+                if ($statisticInfo['seriesType'] != 'line') {
+                    $limit = intval($statisticInfo['maxShowNumber']) > 0 ? intval($statisticInfo['maxShowNumber']) : 20;
+                    $datas = $rst->findAll(array(), array(
+                        'value' => - 1
+                    ), 0, $limit);
+                } else {
+                    $limit = intval($statisticInfo['maxShowNumber']) > 0 ? intval($statisticInfo['maxShowNumber']) : 20;
+                    $datas = $rst->findAll(array(), array(
+                        '_id' => 1
+                    ), 0, $limit);
+                }
+                
+                $datas = $this->replaceRshData($datas, $map);
+                
                 return $this->rst($datas, 0, true);
             }
         } catch (\Exception $e) {
             return $this->deny('程序异常：' . $e->getLine() . $e->getMessage());
         }
+    }
+
+    /**
+     * 替换数据
+     *
+     * @param array $datas            
+     * @param array $map            
+     * @return array
+     */
+    private function replaceRshData($datas, $map)
+    {
+        $this->dealRshData();
+        convertToPureArray($datas);
+        array_walk($datas, function (&$value, $key) use($map)
+        {
+            ksort($value);
+            array_walk($value, function (&$cell, $field) use($map)
+            {
+                if (isset($map[$field])) {
+                    $field = $map[$field];
+                    if (isset($this->_rshData[$field])) {
+                        $cell = isset($this->_rshData[$field][$cell]) ? $this->_rshData[$field][$cell] : '';
+                    }
+                }
+            });
+        });
+        return $datas;
     }
 
     /**
@@ -400,7 +627,14 @@ class DataController extends Action
             $datas = array();
             while ($cursor->hasNext()) {
                 $row = $cursor->getNext();
-                $datas[$row[$detail['rshCollectionValueField']]] = $row[$detail['rshCollectionKeyField']];
+                $key = $row[$detail['rshCollectionValueField']];
+                $value = isset($row[$detail['rshCollectionKeyField']]) ? $row[$detail['rshCollectionKeyField']] : '';
+                if ($key instanceof \MongoId) {
+                    $key = $key->__toString();
+                }
+                if (! empty($key)) {
+                    $datas[$key] = $value;
+                }
             }
             $this->_rshData[$detail['collectionField']] = $datas;
         }
@@ -493,6 +727,7 @@ class DataController extends Action
      */
     public function excelAction()
     {
+        // 先判断是否设定导出字段
         $forwardPlugin = $this->forward();
         $returnValue = $forwardPlugin->dispatch('idatabase/data/index', array(
             'action' => 'excel'
@@ -902,6 +1137,7 @@ class DataController extends Action
      */
     public function dropAction()
     {
+        resetTimeMemLimit();
         $password = $this->params()->fromPost('password', null);
         if ($password == null) {
             return $this->msg(false, '请输入当前用户的登录密码');
@@ -932,7 +1168,9 @@ class DataController extends Action
     private function getSchema()
     {
         $schema = array(
+            '2d' => array(),
             'file' => array(),
+            'export' => array(),
             'post' => array(
                 '_id' => array(
                     'type' => '_idfield'
@@ -963,6 +1201,10 @@ class DataController extends Action
             $this->_fields[$row['field']] = true;
             $this->_title[$row['field']] = $row['label'];
             
+            if ($row['type'] === '2dfield') {
+                $schema['2d'][$row['field']] = $row;
+            }
+            
             if ($row['rshKey']) {
                 $schema['combobox']['rshCollectionKeyField'] = $row['field'];
             }
@@ -973,6 +1215,11 @@ class DataController extends Action
             
             if (isset($row['isFatherField']) && $row['isFatherField']) {
                 $this->_fatherField = $row['field'];
+            }
+            
+            // 检查结构的时候，检查允许导出的字段
+            if (! empty($row['export'])) {
+                $schema['export'][$row['field']] = true;
             }
             
             if (isset($row['isQuick']) && $row['isQuick'] && $row['type'] == 'arrayfield') {
@@ -1116,6 +1363,10 @@ class DataController extends Action
             $not = false;
             $exact = false;
             
+            if(in_array(strtolower($field),$this->_filter)) {
+                continue;
+            }
+            
             if (isset($_REQUEST['exclusive__' . $field]) && filter_var($_REQUEST['exclusive__' . $field], FILTER_VALIDATE_BOOLEAN))
                 $not = true;
             
@@ -1136,8 +1387,8 @@ class DataController extends Action
                 switch ($detail['type']) {
                     case 'numberfield':
                         if (is_array($_REQUEST[$field])) {
-                            $min = trim($_REQUEST[$field]['min']);
-                            $max = trim($_REQUEST[$field]['max']);
+                            $min = isset($_REQUEST[$field]['min']) ? trim($_REQUEST[$field]['min']) : '';
+                            $max = isset($_REQUEST[$field]['max']) ? trim($_REQUEST[$field]['max']) : '';
                             $min = preg_match("/^[0-9]+\.[0-9]+$/", $min) ? floatval($min) : intval($min);
                             $max = preg_match("/^[0-9]+\.[0-9]+$/", $max) ? floatval($max) : intval($max);
                             
@@ -1170,10 +1421,12 @@ class DataController extends Action
                         }
                         break;
                     case 'datefield':
-                        $start = trim($_REQUEST[$field]['start']);
-                        $end = trim($_REQUEST[$field]['end']);
-                        $start = preg_match("/^[0-9]+$/", $start) ? new \MongoDate(intval($start)) : new \MongoDate(strtotime($start));
-                        $end = preg_match("/^[0-9]+$/", $end) ? new \MongoDate(intval($end)) : new \MongoDate(strtotime($end));
+                        $start = isset($_REQUEST[$field]['start']) ? trim($_REQUEST[$field]['start']) : null;
+                        $end = isset($_REQUEST[$field]['end']) ? trim($_REQUEST[$field]['end']) : null;
+                        if (! empty($start))
+                            $start = preg_match("/^[0-9]+$/", $start) ? new \MongoDate(intval($start)) : new \MongoDate(strtotime($start));
+                        if (! empty($end))
+                            $end = preg_match("/^[0-9]+$/", $end) ? new \MongoDate(intval($end)) : new \MongoDate(strtotime($end));
                         if ($not) {
                             if (! empty($start))
                                 $subQuery['$or'][][$field]['$lte'] = $start;
@@ -1187,16 +1440,28 @@ class DataController extends Action
                         }
                         break;
                     case '2dfield':
-                        $lng = floatval(trim($_REQUEST[$field]['lng']));
-                        $lat = floatval(trim($_REQUEST[$field]['lat']));
-                        $distance = ! empty($_REQUEST[$field]['distance']) ? floatval($_REQUEST[$field]['distance']) : 10;
-                        $subQuery = array(
-                            '$near' => array(
-                                $lng,
-                                $lat
-                            ),
-                            '$maxDistance' => $distance / 111.12
-                        );
+                        // $lng = floatval(trim($_REQUEST[$field]['lng']));
+                        // $lat = floatval(trim($_REQUEST[$field]['lat']));
+                        // $distance = ! empty($_REQUEST[$field]['distance']) ? floatval($_REQUEST[$field]['distance']) : 10;
+                        // $subQuery[$field] = array(
+                        // '$near' => array(
+                        // $lng,
+                        // $lat
+                        // ),
+                        // '$maxDistance' => $distance / 111.12
+                        // );
+                        
+                        // // 在mognodb2.5.5以前，无法支持$and查询故如果进行地理位置信息检索，则强制其他检索条件失效。
+                        // // 迁移到2.6以后，请注释掉该部分代码
+                        // $geoQuery = array();
+                        // $geoQuery[$field] = array(
+                        // '$near' => array(
+                        // $lng,
+                        // $lat
+                        // ),
+                        // '$maxDistance' => $distance / 111.12
+                        // );
+                        // return $geoQuery;
                         break;
                     case 'boolfield':
                         $subQuery[$field] = filter_var(trim($_REQUEST[$field]), FILTER_VALIDATE_BOOLEAN);
@@ -1225,7 +1490,9 @@ class DataController extends Action
                         }
                         break;
                 }
-                $query['$and'][] = $subQuery;
+                if (! empty($subQuery)) {
+                    $query['$and'][] = $subQuery;
+                }
             }
         }
         

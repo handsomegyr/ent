@@ -8,15 +8,15 @@ class Dashboard extends Mongo
 {
 
     protected $collection = IDATABASE_DASHBOARD;
-    
+
     private $_collection;
-    
+
     private $_project;
-    
+
     private $_mapping;
-    
+
     private $_statistic;
-    
+
     public function init()
     {
         $this->_collection = new Collection($this->config);
@@ -28,7 +28,7 @@ class Dashboard extends Mongo
     /**
      * 根据集合的名称获取集合的_id
      *
-     * @param string $project_id         
+     * @param string $project_id            
      * @throws \Exception or string
      */
     public function getAllStatisticsByProject($project_id)
@@ -41,7 +41,8 @@ class Dashboard extends Mongo
             $row = $cursor->getNext();
             $collection_id = $row['_id']->__toString();
             $statisticInfos = $this->_statistic->findAll(array(
-                'collection_id' => $collection_id
+                'collection_id' => $collection_id,
+                'isDashboard' => true
             ));
             if (! empty($statisticInfos)) {
                 foreach ($statisticInfos as $statisticInfos) {
@@ -60,5 +61,4 @@ class Dashboard extends Mongo
         }
         return $statistics;
     }
-    
 }

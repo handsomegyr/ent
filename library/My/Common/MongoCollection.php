@@ -273,7 +273,7 @@ class MongoCollection extends \MongoCollection
          * MongoClient::RP_SECONDARY 只读从db优先
          * MongoClient::RP_SECONDARY_PREFERRED 读取从db优先
          */
-        //$this->db->setReadPreference(\MongoClient::RP_SECONDARY_PREFERRED);
+        // $this->db->setReadPreference(\MongoClient::RP_SECONDARY_PREFERRED);
         $this->db->setReadPreference(\MongoClient::RP_PRIMARY_PREFERRED);
     }
 
@@ -315,6 +315,62 @@ class MongoCollection extends \MongoCollection
             );
         } else {
             $query['__REMOVED__'] = false;
+        }
+        return $query;
+    }
+
+    /**
+     * 检查某个数组中，是否包含某个键
+     *
+     * @param array $array            
+     * @param array $keys            
+     * @return boolean
+     */
+    private function checkKeyExistInArray($array, $keys)
+    {
+        if (! is_array($keys)) {
+            $keys = array(
+                $keys
+            );
+        }
+        $result = false;
+        array_walk_recursive($array, function ($items, $key) use($keys, &$result)
+        {
+            if (in_array($key, $keys, true))
+                $result = true;
+        });
+        return $result;
+    }
+
+    /**
+     * ICC采用_id自动分片机制，故需要判断是否增加片键字段，用于分片集合update数据时使用upsert=>true的情况
+     *
+     * @param array $query            
+     * @return multitype: Ambigous multitype:\MongoId >
+     */
+    private function addSharedKeyToQuery(array $query = null)
+    {
+        if (! is_array($query)) {
+            throw new \Exception('$query必须为数组');
+        }
+        
+        if ($this->checkKeyExistInArray($query, '_id')) {
+            return $query;
+        }
+        
+        $keys = array_keys($query);
+        $intersect = array_intersect($keys, $this->_queryHaystack);
+        if (! empty($intersect)) {
+            $query = array(
+                '$and' => array(
+                    array(
+                        '_id' => new \MongoId()
+                    ),
+                    $query
+                )
+            );
+        } else {
+            $query['_id'] = new \MongoId();
         }
         return $query;
     }
@@ -367,20 +423,25 @@ class MongoCollection extends \MongoCollection
      */
     public function aggregate($pipeline, $op = NULL, $op1 = NULL)
     {
-        $args = func_get_args();
         if (! $this->_noAppendQuery) {
-            array_unshift($args, array(
-                array(
+            if (isset($pipeline[0]['$geoNear'])) {
+                $first = array_shift($pipeline);
+                array_unshift($pipeline, array(
                     '$match' => array(
                         '__REMOVED__' => false
                     )
-                )
-            ));
+                ));
+                array_unshift($pipeline, $first);
+            } else {
+                array_unshift($pipeline, array(
+                    '$match' => array(
+                        '__REMOVED__' => false
+                    )
+                ));
+            }
         }
-        return call_user_func_array(array(
-            parent,
-            'aggregate'
-        ), $args);
+        
+        return parent::aggregate($pipeline);
     }
 
     /**
@@ -453,6 +514,49 @@ class MongoCollection extends \MongoCollection
     }
 
     /**
+     * 在同一个数据库内，复制集合数据
+     *
+     * @param string $from            
+     * @param string $to            
+     */
+    public function copyTo($to)
+    {
+        switch ($this->_database) {
+            case DEFAULT_DATABASE:
+                $db = $this->_db;
+                break;
+            case DB_MAPREDUCE:
+                $db = $this->_mapreduce;
+                break;
+            case DB_BACKUP:
+                $db = $this->_backup;
+                break;
+            case DB_ADMIN:
+                $db = $this->_admin;
+                break;
+            default:
+                $db = $this->_db;
+                break;
+        }
+        $target = new \MongoCollection($db, $to);
+        if (method_exists($target, 'setWriteConcern'))
+            $target->setWriteConcern(0);
+        else
+            $target->w = 0;
+        
+        $cursor = $this->find(array());
+        while ($cursor->hasNext()) {
+            $row = $cursor->getNext();
+            if ($row['_id'] instanceof \MongoId) {
+                $row['__OLD_ID__'] = $row['_id'];
+                unset($row['_id']);
+            }
+            $target->insert($row);
+        }
+        return true;
+    }
+
+    /**
      * ICC系统默认采用后台创建的方式，建立索引
      *
      * @see MongoCollection::ensureIndex()
@@ -474,7 +578,8 @@ class MongoCollection extends \MongoCollection
     public function find($query = NULL, $fields = NULL)
     {
         $fields = empty($fields) ? array() : $fields;
-        return parent::find($this->appendQuery($query), $fields);
+        $query = $this->appendQuery($query);
+        return parent::find($query, $fields);
     }
 
     /**
@@ -498,7 +603,7 @@ class MongoCollection extends \MongoCollection
      * @param array $fields            
      * @return array
      */
-    public function findAll($query, $sort = array('$natural'=>1), $skip = 0, $limit = 0, $fields = array())
+    public function findAll($query = array(), $sort = array('$natural'=>1), $skip = 0, $limit = 0, $fields = array())
     {
         $fields = empty($fields) ? array() : $fields;
         $cursor = $this->find($query, $fields);
@@ -533,6 +638,11 @@ class MongoCollection extends \MongoCollection
     public function findAndModify(array $query, array $update = NULL, array $fields = NULL, array $options = NULL)
     {
         $query = $this->appendQuery($query);
+        if (parent::count($query) == 0 && $options['upsert'] == true) {
+            $query = $this->addSharedKeyToQuery($query);
+        } else {
+            unset($options['upsert']);
+        }
         return parent::findAndModify($query, $update, $fields, $options);
     }
 
@@ -564,6 +674,11 @@ class MongoCollection extends \MongoCollection
         if (isset($option['upsert']))
             $cmd['upsert'] = is_bool($option['upsert']) ? $option['upsert'] : false;
         
+        if (parent::count($cmd['query']) == 0 && $option['upsert'] == true) {
+            $cmd['query'] = $this->addSharedKeyToQuery($cmd['query']);
+        } else {
+            unset($cmd['upsert']);
+        }
         return $this->_db->command($cmd);
     }
 
@@ -642,7 +757,7 @@ class MongoCollection extends \MongoCollection
             $a['__MODIFY_TIME__'] = new \MongoDate();
         }
         
-        if (! isset($a['__REMOVED__'])) {
+        if (! isset($a['__REMOVED__']) && ! $this->_noAppendQuery) {
             $a['__REMOVED__'] = false;
         }
         
@@ -768,7 +883,7 @@ class MongoCollection extends \MongoCollection
         
         $keys = array_keys($object);
         foreach ($keys as $key) {
-            $key = strtolower($key);
+            // $key = strtolower($key);
             if (! in_array($key, $this->_updateHaystack, true)) {
                 throw new \Exception('$key must contain ' . join(',', $this->_updateHaystack));
             }
@@ -792,6 +907,7 @@ class MongoCollection extends \MongoCollection
         
         if (parent::count($criteria) == 0) {
             if (isset($options['upsert']) && $options['upsert']) {
+                $criteria = $this->addSharedKeyToQuery($criteria);
                 parent::update($criteria, array(
                     '$set' => array(
                         '__CREATE_TIME__' => new \MongoDate(),
@@ -801,6 +917,7 @@ class MongoCollection extends \MongoCollection
                 ), $options);
             }
         } else {
+            unset($options['upsert']);
             parent::update($criteria, array(
                 '$set' => array(
                     '__MODIFY_TIME__' => new \MongoDate()
@@ -860,7 +977,7 @@ class MongoCollection extends \MongoCollection
     }
 
     /**
-     * 执行DB的command操作
+     * 执行DB的command操作,直接运行命令行操作数据库中的数据，慎用
      *
      * @param array $command            
      * @return array
@@ -876,9 +993,11 @@ class MongoCollection extends \MongoCollection
      *
      * @param array $command            
      */
-    public function mapReduce($map, $reduce, $query = array(), $finalize = null, $method = 'replace', $scope = null, $sort = array('$natural'=>1), $limit = null)
+    public function mapReduce($out = null, $map, $reduce, $query = array(), $finalize = null, $method = 'replace', $scope = null, $sort = array('$natural'=>1), $limit = null)
     {
-        $out = md5(serialize(func_get_args()));
+        if ($out == null) {
+            $out = md5(serialize(func_get_args()));
+        }
         try {
             // map reduce执行锁管理开始
             $locks = new self($this->_configInstance, 'locks', DB_MAPREDUCE, $this->_cluster);
@@ -996,8 +1115,11 @@ class MongoCollection extends \MongoCollection
                 return $failure(502, '程序正在执行中，请勿频繁尝试');
             }
         } catch (\Exception $e) {
-            $releaseLock($out, exceptionMsg($e));
-            return $failure(503, exceptionMsg($e));
+            if (isset($releaseLock) && isset($failure)) {
+                $releaseLock($out, exceptionMsg($e));
+                return $failure(503, exceptionMsg($e));
+            }
+            var_dump(exceptionMsg($e));
         }
     }
 
@@ -1006,7 +1128,48 @@ class MongoCollection extends \MongoCollection
      *
      * @param string $fieldName
      *            上传表单字段的名称
-     *            
+     * @return array 返回上传文件成功后的object
+     *        
+     *         object结构如下:
+     *         array(
+     *         ['_id'] =>
+     *         MongoId(
+     *        
+     *         $id =
+     *         '537cc9b54896194b228b4581'
+     *         )
+     *         ['collection_id'] =>
+     *         NULL
+     *         ['name'] =>
+     *         'b21c8701a18b87d624ac8e2d050828381f30fd11.jpg'
+     *         ['type'] =>
+     *         'image/jpeg'
+     *         ['tmp_name'] =>
+     *         '/tmp/phpeBS799'
+     *         ['error'] =>
+     *         0
+     *         ['size'] =>
+     *         350522
+     *         ['mime'] =>
+     *         'image/jpeg; charset=binary'
+     *         ['filename'] =>
+     *         'b21c8701a18b87d624ac8e2d050828381f30fd11.jpg'
+     *         ['uploadDate'] =>
+     *         MongoDate(
+     *        
+     *         sec =
+     *         1400687029
+     *         usec =
+     *         515000
+     *         )
+     *         ['length'] =>
+     *         350522
+     *         ['chunkSize'] =>
+     *         262144
+     *         ['md5'] =>
+     *         '3a736c4eed22030dde16df11fee263e7'
+     *         )
+     *        
      */
     public function storeToGridFS($fieldName, $metadata = array())
     {
@@ -1023,12 +1186,12 @@ class MongoCollection extends \MongoCollection
             $metadata['mime'] = $mime;
         
         $id = $this->_fs->storeUpload($fieldName, $metadata);
-        fb($id, 'LOG');
         $gridfsFile = $this->_fs->get($id);
         if (! ($gridfsFile instanceof \MongoGridFSFile)) {
-            fb($gridfsFile,'LOG');
+            fb($gridfsFile, 'LOG');
             throw new \Exception('$gridfsFile is not instanceof MongoGridFSFile');
         }
+        
         return $gridfsFile->file;
     }
 
@@ -1069,6 +1232,27 @@ class MongoCollection extends \MongoCollection
             $id = new \MongoId($id);
         }
         return $this->_fs->get($id);
+    }
+
+    /**
+     * 根据查询条件获取指定数量的结果集
+     *
+     * @param array $query            
+     * @param number $start            
+     * @param number $limit            
+     * @return multitype:
+     */
+    public function getGridFsFileBy($query, $sort = array('_id'=>-1), $start = 0, $limit = 20, $fields = array())
+    {
+        if (! is_array($query)) {
+            $query = array();
+        }
+        $cursor = $this->_fs->find($query, $fields);
+        $cursor->sort($sort)
+            ->skip($start)
+            ->limit($limit);
+        $rst = iterator_to_array($cursor, false);
+        return $rst;
     }
 
     /**
@@ -1113,7 +1297,9 @@ class MongoCollection extends \MongoCollection
         if (! $id instanceof \MongoId) {
             $id = new \MongoId($id);
         }
-        return $this->_fs->remove($id);
+        return $this->_fs->remove(array(
+            '_id' => $id
+        ));
     }
 
     /**
@@ -1121,15 +1307,17 @@ class MongoCollection extends \MongoCollection
      */
     private function debug()
     {
-        $err = $this->_db->lastError();
-        // 在浏览器中输出错误信息以便发现问题
-        if (self::debug) {
-            fb($err, \FirePHP::LOG);
-        } else {
-            if ($err['err'] != null) {
-                GlobalEventManager::trigger('logError', null, array(
-                    json_encode($err)
-                ));
+        if ($this->_db instanceof \MongoDB) {
+            $err = $this->_db->lastError();
+            // 在浏览器中输出错误信息以便发现问题
+            if (self::debug) {
+                fb($err, \FirePHP::LOG);
+            } else {
+                if ($err['err'] != null) {
+                    GlobalEventManager::trigger('logError', null, array(
+                        json_encode($err)
+                    ));
+                }
             }
         }
     }

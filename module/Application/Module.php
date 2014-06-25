@@ -11,6 +11,7 @@ use Zend\Mvc\MvcEvent;
 use Zend\Authentication\AuthenticationService;
 use Zend\Authentication\Storage\Session as SessionStorage;
 use phpbrowscap\Browscap;
+use Zend\Console\Response as ConsoleResponse;
 
 class Module
 {
@@ -48,19 +49,18 @@ class Module
         // 微软这个流氓，低于IE10版本一下的IE浏览器都需要使用text/html格式的Response，否则json在浏览器中会提示下载
         $eventManager->attach(MvcEvent::EVENT_RENDER, function ($event)
         {
-            $objHeaders = $event->getResponse()
-                ->getHeaders();
-            $contentType = $objHeaders->get('Content-Type');
-            if ($contentType) {
-                $contentType = $contentType->getFieldValue();
-                if (strpos($contentType, 'application/json') !== false) {
-                    //$bc = new Browscap(ROOT_PATH . '/cache/');
-                    //$current_browser = $bc->getBrowser();
-                    //if ($current_browser->Browser === 'IE')
-                        //$objHeaders->addHeaderLine('Content-Type', 'text/html;charset=utf-8');
+            $objResponse = $event->getResponse();
+            if (method_exists($objResponse, 'getHeaders')) {
+                $objHeaders = $objResponse->getHeaders();
+                $contentType = $objHeaders->get('Content-Type');
+                if ($contentType) {
+                    $contentType = $contentType->getFieldValue();
+                    if (strpos($contentType, 'application/json') !== false) {
+                        $objHeaders->addHeaderLine('Content-Type', 'text/html;charset=utf-8');
+                    }
+                } else {
+                    $objHeaders->addHeaderLine('Content-Type', 'text/html;charset=utf-8');
                 }
-            } else {
-                $objHeaders->addHeaderLine('Content-Type', 'text/html;charset=utf-8');
             }
         }, - 10000);
         
@@ -75,7 +75,15 @@ class Module
     public function initFirePHP()
     {
         // 开启FirePHP调试或者关闭
+        $options = array(
+            'maxObjectDepth' => 10,
+            'maxArrayDepth' => 10,
+            'maxDepth' => 10,
+            'useNativeJsonEncode' => true,
+            'includeLineNumbers' => true
+        );
         \FirePHP::getInstance(true)->setEnabled(true);
+        \FB::setOptions($options);
     }
 
     public function initAuthentication()

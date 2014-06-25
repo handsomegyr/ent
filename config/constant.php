@@ -7,8 +7,7 @@ defined('CACHE_ADAPTER') || define('CACHE_ADAPTER', 'fileCache'); // [fileCache|
 defined('APPLICATION_ENV') || define('APPLICATION_ENV', 'development'); // [development|production]
 defined('DEFAULT_DATABASE') || define('DEFAULT_DATABASE', 'ICCv1');
 defined('DEFAULT_CLUSTER') || define('DEFAULT_CLUSTER', 'default');
-//defined('DOMAIN') || define('DOMAIN', 'http://localhost');
-defined('DOMAIN') || define('DOMAIN', 'http://ent2');
+defined('DOMAIN') || define('DOMAIN', 'http://ent');
 
 /**
  * ICC指定数据库列表
@@ -17,7 +16,9 @@ defined('DB_ADMIN') || define('DB_ADMIN', 'admin');
 defined('DB_BACKUP') || define('DB_BACKUP', 'backup');
 defined('DB_MAPREDUCE') || define('DB_MAPREDUCE', 'mapreduce');
 defined('DB_LOGS') || define('DB_LOGS', 'logs');
+defined('DB_UMA') || define('DB_UMA', 'umav3');
 defined('GRIDFS_PREFIX') || define('GRIDFS_PREFIX', 'icc');
+
 
 /**
  * 系统全局设定数据库
@@ -38,6 +39,7 @@ defined('IDATABASE_PROJECTS') || define('IDATABASE_PROJECTS', 'idatabase_project
 defined('IDATABASE_PLUGINS') || define('IDATABASE_PLUGINS', 'idatabase_plugins');
 defined('IDATABASE_PLUGINS_COLLECTIONS') || define('IDATABASE_PLUGINS_COLLECTIONS', 'idatabase_plugins_collections');
 defined('IDATABASE_PLUGINS_STRUCTURES') || define('IDATABASE_PLUGINS_STRUCTURES', 'idatabase_plugins_structures');
+defined('IDATABASE_PLUGINS_DATAS') || define('IDATABASE_PLUGINS_DATAS', 'idatabase_plugins_datas');
 defined('IDATABASE_PROJECT_PLUGINS') || define('IDATABASE_PROJECT_PLUGINS', 'idatabase_project_plugins');
 defined('IDATABASE_VIEWS') || define('IDATABASE_VIEWS', 'idatabase_views');
 defined('IDATABASE_STATISTIC') || define('IDATABASE_STATISTIC', 'idatabase_statistic');
@@ -56,11 +58,29 @@ defined('IDATABASE_FILES') || define('IDATABASE_FILES', 'idatabase_files');
 defined('EVENT_LOG_ERROR') || define('EVENT_LOG_ERROR', 'event_log_error');
 defined('EVENT_LOG_DEBUG') || define('EVENT_LOG_DEBUG', 'event_log_debug');
 
-
 /**
  * 系统全局设定数据库
  */
 defined('SYSTEM_USER') || define('SYSTEM_USER', 'system_user');
+/**
+ * 服务器配置信息
+ */
+defined('MEMCACHED_01') || define('MEMCACHED_01', '127.0.0.1');
+defined('MEMCACHED_02') || define('MEMCACHED_02', '127.0.0.2');
 
+defined('REDIS_01') || define('REDIS_01', '10.0.0.2');
 
+defined('MONGOS_DEFAULT_01') || define('MONGOS_DEFAULT_01', 'CentOS6-64.Master:27017');
+defined('MONGOS_DEFAULT_02') || define('MONGOS_DEFAULT_02', 'CentOS6-64.Master:27017');
+defined('MONGOS_DEFAULT_03') || define('MONGOS_DEFAULT_03', 'CentOS6-64.Master:27017');
+
+defined('MONGOS_ANALYSIS_01') || define('MONGOS_ANALYSIS_01', 'CentOS6-64.Master:27017');
+defined('MONGOS_ANALYSIS_02') || define('MONGOS_ANALYSIS_02', 'CentOS6-64.Master:27017');
+defined('MONGOS_ANALYSIS_03') || define('MONGOS_ANALYSIS_03', 'CentOS6-64.Master:27017');
+
+defined('MONGOS_UMA_01') || define('MONGOS_UMA_01', 'CentOS6-64.Master:27017');
+defined('MONGOS_UMA_02') || define('MONGOS_UMA_02', 'CentOS6-64.Master:27017');
+defined('MONGOS_UMA_03') || define('MONGOS_UMA_03', 'CentOS6-64.Master:27017');
+
+defined('GEARMAN_SERVERS')|| define('GEARMAN_SERVERS', '127.0.0.1:4730,127.0.0.1:4730');
 

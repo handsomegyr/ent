@@ -162,8 +162,9 @@ class Database
         $rst = $this->_key->findOne($query, array(
             'key' => true
         ));
-        if ($rst === null)
+        if ($rst === null) {
             throw new \SoapFault(404, '授权密钥无效');
+        }
         return $rst;
     }
 
@@ -302,7 +303,7 @@ class Database
         $limit = intval($limit);
         $limit = $limit < 0 ? 10 : $limit;
         $limit = $limit > 1000 ? 1000 : $limit;
-        if (isJson($fields)) {
+        if (! empty($fields)) {
             $fields = $this->toArray($fields);
         } else {
             $fields = array();
@@ -333,7 +334,7 @@ class Database
     public function findOne($query, $fields)
     {
         $query = $this->toArray($query);
-        if (isJson($fields)) {
+        if (! empty($fields)) {
             $fields = $this->toArray($fields);
         } else {
             $fields = array();
@@ -434,14 +435,16 @@ class Database
      *
      * @param string $criteria            
      * @param string $object            
+     * @param string $options            
      * @throws \SoapFault
      * @return string
      */
-    public function update($criteria, $object)
+    public function update($criteria, $object, $options)
     {
         $criteria = $this->toArray($criteria);
         $object = $this->toArray($object);
-        $rst = $this->_model->update($criteria, $object);
+        $options = $this->toArray($options);
+        $rst = $this->_model->update($criteria, $object, $options);
         return $this->result($rst);
     }
 
@@ -479,13 +482,13 @@ class Database
      */
     public function ensureIndex($keys, $options)
     {
-        if (isJson($keys)) {
+        if (! empty($keys)) {
             $keys = $this->toArray($keys);
         } else {
             $keys = trim($keys);
         }
         
-        if (isJson($options)) {
+        if (! empty($options)) {
             $options = $this->toArray($options);
         } else {
             $options = array(
@@ -564,7 +567,7 @@ class Database
     }
 
     /**
-     * 存储文件到集群
+     * 存储小文件文件到集群（2M以内的文件）
      *
      * @param string $fileBytes            
      * @param string $fileName            
@@ -608,6 +611,7 @@ class Database
         }
         return $this->result($rst);
     }
+
 
     /**
      * 规范返回数据的格式为数组
@@ -680,8 +684,8 @@ class Database
             }
             array_walk_recursive($rst, function (&$value, $key)
             {
-                if ($key === '_id' && strlen($value) === 24) {
-                    if (! ($value instanceof \MongoId))
+                if ($key === '_id') {
+                    if (! ($value instanceof \MongoId) && strlen($value) === 24)
                         $value = new \MongoId($value);
                 }
             });

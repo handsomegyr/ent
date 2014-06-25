@@ -316,6 +316,9 @@ Ext.ClassManager.addNameAlternateMappings({
   ],
   "Ext.form.RadioGroup": [],
   "Ext.form.RadioManager": [],
+  "Ext.form.UEditor": [
+    "Ext.ux.UEditor"
+  ],
   "Ext.form.action.Action": [
     "Ext.form.Action"
   ],
@@ -814,6 +817,9 @@ Ext.ClassManager.addNameAlternateMappings({
   "Ext.ux.event.Player": [],
   "Ext.ux.event.Recorder": [],
   "Ext.ux.event.RecorderManager": [],
+  "Ext.ux.form.HtmlEditor.ImageCropDialog": [],
+  "Ext.ux.form.HtmlEditor.ImageDialog": [],
+  "Ext.ux.form.HtmlEditor.imageUpload": [],
   "Ext.ux.form.ItemSelector": [
     "Ext.ux.ItemSelector"
   ],
@@ -1401,6 +1407,9 @@ Ext.ClassManager.addNameAliasMappings({
     "widget.radiogroup"
   ],
   "Ext.form.RadioManager": [],
+  "Ext.form.UEditor": [
+    "widget.ueditor"
+  ],
   "Ext.form.action.Action": [],
   "Ext.form.action.DirectLoad": [
     "formaction.directload"
@@ -2008,6 +2017,9 @@ Ext.ClassManager.addNameAliasMappings({
   "Ext.ux.event.RecorderManager": [
     "widget.eventrecordermanager"
   ],
+  "Ext.ux.form.HtmlEditor.ImageCropDialog": [],
+  "Ext.ux.form.HtmlEditor.ImageDialog": [],
+  "Ext.ux.form.HtmlEditor.imageUpload": [],
   "Ext.ux.form.ItemSelector": [
     "widget.itemselector",
     "widget.itemselectorfield"

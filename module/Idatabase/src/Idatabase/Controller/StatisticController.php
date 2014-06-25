@@ -90,6 +90,7 @@ class StatisticController extends Action
         $project_id = trim($this->params()->fromPost('__PROJECT_ID__', ''));
         $collection_id = trim($this->params()->fromPost('__COLLECTION_ID__', ''));
         $name = trim($this->params()->fromPost('name', ''));
+        $defaultQuery = trim($this->params()->fromPost('defaultQuery', ''));
         $yAxisTitle = trim($this->params()->fromPost('yAxisTitle', '')); // Y轴名称
         $yAxisType = trim($this->params()->fromPost('yAxisType', '')); // Y轴统计方法
         $yAxisField = trim($this->params()->fromPost('yAxisField', '')); // Y轴统计字段
@@ -100,6 +101,7 @@ class StatisticController extends Action
         $seriesField = trim($this->params()->fromPost('seriesField', '')); // 用于pie
         $maxShowNumber = intval($this->params()->fromPost('maxShowNumber', 100)); // 显示最大数量，防止饼状图太多
         $isDashboard = filter_var($this->params()->fromPost('isDashboard', null), FILTER_VALIDATE_BOOLEAN); // 是否显示在控制面板
+        $dashboardTitle = trim($this->params()->fromPost('dashboardTitle', ''));
         $dashboardQuery = trim($this->params()->fromPost('dashboardQuery', '')); // 控制面板附加查询条件
         $statisticPeriod = intval($this->params()->fromPost('statisticPeriod', 24 * 3600)); // 控制面板显示周期
         $colspan = intval($this->params()->fromPost('colspan', 1)); // 行显示是否合并
@@ -153,10 +155,22 @@ class StatisticController extends Action
                 try {
                     $dashboardQuery = Json::decode($dashboardQuery, Json::TYPE_ARRAY);
                 } catch (\Exception $e) {
-                    return $this->msg(false, '统计条件的json格式错误');
+                    return $this->msg(false, '仪表盘统计条件的json格式错误');
                 }
             } else {
-                return $this->msg(false, '统计条件的json格式错误');
+                return $this->msg(false, '仪表盘统计条件的json格式错误');
+            }
+        }
+        
+        if ($defaultQuery !== '') {
+            if (isJson($defaultQuery)) {
+                try {
+                    $defaultQuery = Json::decode($defaultQuery, Json::TYPE_ARRAY);
+                } catch (\Exception $e) {
+                    return $this->msg(false, '默认统计条件的json格式错误');
+                }
+            } else {
+                return $this->msg(false, '默认统计条件的json格式错误');
             }
         }
         
@@ -164,6 +178,7 @@ class StatisticController extends Action
         $datas['project_id'] = $project_id;
         $datas['collection_id'] = $collection_id;
         $datas['name'] = $name;
+        $datas['defaultQuery'] = $defaultQuery;
         $datas['yAxisTitle'] = $yAxisTitle; // title string
         $datas['yAxisType'] = $yAxisType; // [Numeric]
         $datas['yAxisField'] = $yAxisField; // array()
@@ -178,6 +193,7 @@ class StatisticController extends Action
         $datas['maxShowNumber'] = $maxShowNumber;
         
         $datas['isDashboard'] = $isDashboard;
+        $datas['dashboardTitle'] = ! empty($dashboardTitle) ? $dashboardTitle : $name;
         $datas['dashboardQuery'] = $dashboardQuery;
         $datas['statisticPeriod'] = $statisticPeriod;
         $datas['colspan'] = $colspan;
@@ -205,6 +221,7 @@ class StatisticController extends Action
         $project_id = trim($this->params()->fromPost('__PROJECT_ID__', ''));
         $collection_id = trim($this->params()->fromPost('__COLLECTION_ID__', ''));
         $name = trim($this->params()->fromPost('name', ''));
+        $defaultQuery = trim($this->params()->fromPost('defaultQuery', ''));
         $yAxisTitle = trim($this->params()->fromPost('yAxisTitle', '')); // Y轴名称
         $yAxisType = trim($this->params()->fromPost('yAxisType', '')); // Y轴统计方法
         $yAxisField = trim($this->params()->fromPost('yAxisField', '')); // Y轴统计字段
@@ -215,6 +232,7 @@ class StatisticController extends Action
         $seriesField = trim($this->params()->fromPost('seriesField', '')); // 用于pie
         $maxShowNumber = intval($this->params()->fromPost('maxShowNumber', 100)); // 显示最大数量，防止饼状图太多
         $isDashboard = filter_var($this->params()->fromPost('isDashboard', null), FILTER_VALIDATE_BOOLEAN); // 是否显示在控制面板
+        $dashboardTitle = trim($this->params()->fromPost('dashboardTitle', ''));
         $dashboardQuery = trim($this->params()->fromPost('dashboardQuery', '')); // 控制面板附加查询条件
         $statisticPeriod = intval($this->params()->fromPost('statisticPeriod', 24 * 3600)); // 控制面板显示周期
         $colspan = intval($this->params()->fromPost('colspan', 1)); // 行显示是否合并
@@ -268,10 +286,22 @@ class StatisticController extends Action
                 try {
                     $dashboardQuery = Json::decode($dashboardQuery, Json::TYPE_ARRAY);
                 } catch (\Exception $e) {
-                    return $this->msg(false, '统计条件的json格式错误');
+                    return $this->msg(false, '仪表盘统计条件的json格式错误');
                 }
             } else {
-                return $this->msg(false, '统计条件的json格式错误');
+                return $this->msg(false, '仪表盘统计条件的json格式错误');
+            }
+        }
+        
+        if ($defaultQuery !== '') {
+            if (isJson($defaultQuery)) {
+                try {
+                    $defaultQuery = Json::decode($defaultQuery, Json::TYPE_ARRAY);
+                } catch (\Exception $e) {
+                    return $this->msg(false, '默认统计条件的json格式错误');
+                }
+            } else {
+                return $this->msg(false, '默认统计条件的json格式错误');
             }
         }
         
@@ -279,6 +309,7 @@ class StatisticController extends Action
         $datas['project_id'] = $project_id;
         $datas['collection_id'] = $collection_id;
         $datas['name'] = $name;
+        $datas['defaultQuery'] = $defaultQuery;
         $datas['yAxisTitle'] = $yAxisTitle; // title string
         $datas['yAxisType'] = $yAxisType; // [Numeric]
         $datas['yAxisField'] = $yAxisField; // array()
@@ -293,6 +324,7 @@ class StatisticController extends Action
         $datas['maxShowNumber'] = $maxShowNumber;
         
         $datas['isDashboard'] = $isDashboard;
+        $datas['dashboardTitle'] = ! empty($dashboardTitle) ? $dashboardTitle : $name;
         $datas['dashboardQuery'] = $dashboardQuery;
         $datas['statisticPeriod'] = $statisticPeriod;
         $datas['colspan'] = $colspan;

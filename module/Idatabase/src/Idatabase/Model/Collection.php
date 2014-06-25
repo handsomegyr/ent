@@ -8,10 +8,20 @@ class Collection extends Mongo
 
     protected $collection = IDATABASE_COLLECTIONS;
 
+    private $_structure;
+
+    /**
+     * 初始化功能解释
+     */
+    public function init()
+    {
+        $this->_structure = new Structure($this->config);
+    }
+
     /**
      * 根据集合的名称获取集合的_id
      *
-     * @param string $project_id
+     * @param string $project_id            
      * @param string $alias            
      * @throws \Exception or string
      */
@@ -34,4 +44,5 @@ class Collection extends Mongo
             return $collectionInfo['_id']->__toString();
         }
     }
+
 }

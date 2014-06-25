@@ -11,7 +11,7 @@ The recommended way to install react is [through composer](http://getcomposer.or
 ```JSON
 {
     "require": {
-        "react/react": "0.3.*"
+        "react/react": "0.4.*"
     }
 }
 ```
@@ -84,17 +84,19 @@ $loop->run();
 ## Documentation
 
 Superficial documentation can be found in the README files of the individual
-components. See `src/React/*/README.md`.
+components. See `src/*/README.md`.
 
 ## Community
 
 Check out #reactphp on irc.freenode.net. Also follow
-[@reactphp](https://twitter.com/#!/reactphp) on twitter.
+[@reactphp](https://twitter.com/reactphp) on twitter.
 
 ## Tests
 
-To run the test suite, you need PHPUnit.
+To run the test suite, you need install the dependencies via composer, then
+run PHPUnit.
 
+    $ composer install
     $ phpunit
 
 ## License

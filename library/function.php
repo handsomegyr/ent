@@ -1,6 +1,7 @@
 <?php
 use Zend\Http\Request;
 use Zend\Json\Json;
+use My\Common\MongoCollection;
 
 /**
  * ICC函数定义集合文件
@@ -94,7 +95,7 @@ function excelTitle($i)
     $divisor = floor($i / 26);
     $remainder = $i % 26;
     if ($divisor > 0) {
-        return $str[$divisor - 1] . $str[$remainder];
+        return $str[intval($divisor - 1)] . $str[intval($remainder)];
     } else {
         return $str[$remainder];
     }
@@ -112,7 +113,7 @@ function excelTitle($i)
  * @return 直接浏览器输出excel表格 注意这个函数前不能有任何形式的输出
  *        
  */
-function arrayToExcel($datas, $name = '')
+function arrayToExcel($datas, $name = '', $output = 'php://output')
 {
     resetTimeMemLimit();
     if (empty($name)) {
@@ -187,12 +188,16 @@ function arrayToExcel($datas, $name = '')
         $i ++;
     }
     $objPHPExcel->getActiveSheet()->setTitle('Sheet1');
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment;filename="' . $name . '.xlsx"');
-    header('Cache-Control: max-age=0');
     $objWriter = PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
-    $objWriter->save('php://output');
-    exit();
+    if ($output === 'php://output') {
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $name . '.xlsx"');
+        header('Cache-Control: max-age=0');
+        $objWriter->save($output);
+        exit();
+    }
+    $objWriter->save($output);
+    return true;
 }
 
 /**
@@ -452,6 +457,7 @@ function doGet($url, $params = array(), $returnObj = false)
         
         $client = new Zend\Http\Client();
         $client->setUri($url);
+        $client->setMethod(Request::METHOD_GET);
         $client->setParameterGet($params);
         $client->setEncType(Zend\Http\Client::ENC_URLENCODED);
         $client->setOptions(array(
@@ -469,11 +475,7 @@ function doGet($url, $params = array(), $returnObj = false)
             'rfc3986strict' => false
         ));
         $response = $client->request('GET');
-        if ($response->isSuccessful()) {
-            return $returnObj ? $response : $response->getBody();
-        } else {
-            throw new Exception('error status is ' . $response->getStatus());
-        }
+        return $returnObj ? $response : $response->getBody();
     } catch (Exception $e) {
         fb(exceptionMsg($e), \FirePHP::LOG);
         return false;
@@ -499,6 +501,7 @@ function doPost($url, $params = array(), $returnObj = false)
         
         $client = new Zend\Http\Client();
         $client->setUri($url);
+        $client->setMethod(Request::METHOD_POST);
         $client->setParameterPost($params);
         $client->setEncType(Zend\Http\Client::ENC_URLENCODED);
         $client->setOptions(array(
@@ -515,12 +518,8 @@ function doPost($url, $params = array(), $returnObj = false)
             'argseparator' => null,
             'rfc3986strict' => false
         ));
-        $response = $client->request('POST');
-        if ($response->isSuccessful()) {
-            return $returnObj ? $response : $response->getBody();
-        } else {
-            throw new Exception('error status is ' . $response->getStatus());
-        }
+        $response = $client->send();
+        return $returnObj ? $response : $response->getBody();
     } catch (Exception $e) {
         fb(exceptionMsg($e), \FirePHP::LOG);
         return false;
@@ -569,15 +568,12 @@ function doRequest($url, $get = array(), $post = array(), $returnObj = false)
             'rfc3986strict' => false
         ));
         if (! empty($post))
-            $response = $client->request('POST');
+            $client->setMethod(Request::METHOD_POST);
         else
-            $response = $client->request('GET');
+            $client->setMethod(Request::METHOD_GET);
         
-        if ($response->isSuccessful()) {
-            return $returnObj ? $response : $response->getBody();
-        } else {
-            throw new Exception('error status is ' . $response->getStatus());
-        }
+        $response = $client->send();
+        return $returnObj ? $response : $response->getBody();
     } catch (Exception $e) {
         fb(exceptionMsg($e), \FirePHP::LOG);
         return false;
@@ -752,23 +748,23 @@ function getScriptExecuteInfo()
  * @param mixed $remove
  *            key的数组或者key的字符串
  */
-function array_unset_recursive(&$array, $remove)
-{
-    if (! is_array($remove)) {
-        $remove = array(
-            $remove
-        );
-    }
-    foreach ($array as $key => &$value) {
-        if (in_array($key, $remove, true)) {
-            unset($array[$key]);
-        } else {
-            if (is_array($value)) {
-                array_unset_recursive($value, $remove);
-            }
-        }
-    }
-}
+// function array_unset_recursive(&$array, $remove)
+// {
+// if (! is_array($remove)) {
+// $remove = array(
+// $remove
+// );
+// }
+// foreach ($array as $key => &$value) {
+// if (in_array($key, $remove, true)) {
+// unset($array[$key]);
+// } else {
+// if (is_array($value)) {
+// array_unset_recursive($value, $remove);
+// }
+// }
+// }
+// }
 
 /**
  * 进行mongoid和tostring之间的转换
@@ -951,6 +947,7 @@ function iCollectionName($_id)
 /**
  * map reduce统一处理函数
  *
+ * @param string $out            
  * @param resource $dataModel            
  * @param array $statisticInfo            
  * @param array $query            
@@ -959,7 +956,7 @@ function iCollectionName($_id)
  * @param array $sort            
  * @param int $limit            
  */
-function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $scope = null, $sort = array('$natural'=>1), $limit = null)
+function mapReduce($out = null, MongoCollection $dataModel, $statisticInfo, $query, $method = 'replace', $scope = null, $sort = array('$natural'=>1), $limit = null)
 {
     $map = "function(){
             var xAxisType = '{$statisticInfo['xAxisType']}';
@@ -968,24 +965,22 @@ function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $sco
             var xAxisTitle = '{$statisticInfo['xAxisTitle']}'; 
             var key = '';
             var rst = {
-               total : !isNaN(yAxisField) ? yAxisField : 0,
-               count : yAxisField!==undefined ? 1 : 0,
-               max : !isNaN(yAxisField) ? yAxisField : Number.NEGATIVE_INFINITY,
-               min : !isNaN(yAxisField) ? yAxisField : Number.POSITIVE_INFINITY,
+               total : isNumber(yAxisField) ? yAxisField : 0,
+               count : yAxisField!==null ? 1 : 0,
+               max : isNumber(yAxisField) ? yAxisField : Number.NEGATIVE_INFINITY,
+               min : isNumber(yAxisField) ? yAxisField : Number.POSITIVE_INFINITY,
                val : [yAxisField]
             };
 
-            if(xAxisField==undefined ||yAxisField==undefined) {
+            if(xAxisField==null ||yAxisField==null) {
                 key = '__OTHERS__';
                 return emit(key,rst);
             }
             if(xAxisType=='hour' || xAxisType=='day' || xAxisType=='month' || xAxisType=='year') {
-                if(xAxisField!==undefined) {
+                if(xAxisField!==null) {
                     try {
                         var time = new Date(xAxisField);
                         var timeSec = time.getTime();
-                        //time = new Date();
-                        //time.setTime(timeSec+8*3600000);
                         var year = time.getFullYear();
                         var m = time.getMonth() + 1;
                         var month = m<10 ? '0'+m : m; 
@@ -1004,8 +999,16 @@ function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $sco
                 }
             }
             else {
-                if(isNaN(yAxisField)) {
+                if(!isNumber(yAxisField)) {
                     yAxisField = 0;
+                }
+            }
+            
+            if(xAxisField instanceof Array || xAxisField instanceof Object) {
+                if(xAxisField instanceof NumberLong) {
+                    xAxisField = NumberInt(xAxisField);
+                } else {
+                    xAxisField = xAxisField.toString();
                 }
             }
             
@@ -1068,28 +1071,32 @@ function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $sco
                   } else if(yAxisType=='sum') {
                       rst.total += values[idx].total;
                   } else if(yAxisType=='max') {
-                      if(rst.max==undefined)
+                      if(rst.max==null)
                           rst.max = values[idx].max;
                       else if(rst.max <= values[idx].max) {
                           rst.max = values[idx].max;
                       }
                   } else if(yAxisType=='min') {
-                      if(rst.min==undefined) {
+                      if(rst.min==null) {
                           rst.min = values[idx].min;
                       }
                       else if(rst.min >= values[idx].min) {
                           rst.min = values[idx].min;
                       }
-                  } else if(yAxisType=='unique') {
-                      values[idx].val.forEach(function(v,i){
-                          rst.val.push(v);
-                      });   
+                  } else if(yAxisType=='unique'||yAxisType=='distinct') {
+                      if(values[idx].val instanceof Array) {
+                          values[idx].val.forEach(function(v,i){
+                              rst.val.push(v);
+                          });   
+                      }
                   } else if(yAxisType=='avg') {
                       rst.total += values[idx].total;
                       rst.count += values[idx].count;
                   } else if(yAxisType=='median') {
                       values[idx].val.forEach(function(v,i){
-                          rst.val.push(v);
+                          if(typeof(v)=='number') {
+                              rst.val.push(v);
+                          }
                       });
                   } else if(yAxisType=='variance') {
                       rst.total += values[idx].total;
@@ -1125,7 +1132,7 @@ function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $sco
             else if(yAxisType=='min') {
                 rst = reducedValue.min;
             }
-            else if(yAxisType=='unique') {
+            else if(yAxisType=='unique' || yAxisType=='distinct') {
                 reducedValue.val.forEach(function(v,i){
                     if(uniqueData.indexOf(v)===-1) {
                         uniqueNumber += 1;
@@ -1135,36 +1142,95 @@ function mapReduce($dataModel, $statisticInfo, $query, $method = 'replace', $sco
                 rst = uniqueNumber;
             }
             else if(yAxisType=='avg') {
-                rst = Math.round(reducedValue.total / reducedValue.count,2);
+                rst = reducedValue.total / reducedValue.count;
+                rst = Math.round(rst*10000)/10000;
             }
             else if(yAxisType=='median') {
                 reducedValue.val.sort(function(a,b){return a>b?1:-1});
                 var length = reducedValue.val.length;
-                rst = reducedValue.val[(length%2==1 ? Math.floor(length/2) : Math.floor(length/2))];
+                rst = reducedValue.val[parseInt(Math.floor(length/2))];
             }
             else if(yAxisType=='variance') {
-                var avg = Math.round(reducedValue.total / reducedValue.count,2);
+                var avg = reducedValue.total / reducedValue.count;
                 var squared_Diff = 0;
                 var length = reducedValue.val.length;
                 for(var i=0;i<length;i++) {
                     var deviation = reducedValue.val[i] - avg;
                     squared_Diff += deviation * deviation;
                 }
-                rst = Math.round(squared_Diff/length,2);
+                rst = squared_Diff/length;
+                rst = Math.round(rst*10000)/10000;
             }
             else if(yAxisType=='standard') {
-                var avg = Math.round(reducedValue.total / reducedValue.count,2);
+                var avg = reducedValue.total / reducedValue.count;
                 var squared_Diff = 0;
                 var length = reducedValue.val.length;
                 for(var i=0;i<length;i++) {
                     var deviation = reducedValue.val[i] - avg;
                     squared_Diff += deviation * deviation;
                 }
-                rst = Math.round(Math.sqrt(squared_Diff/length),2);
+                rst = Math.sqrt(squared_Diff/length);
+                rst = Math.round(rst*10000)/10000;
             }
             return rst;
         }";
     
-    return $dataModel->mapReduce($map, $reduce, $query, $finalize, $method, $scope, $sort, $limit);
+    return $dataModel->mapReduce($out, $map, $reduce, $query, $finalize, $method, $scope, $sort, $limit);
 }
 
+/**
+ * 效仿数组函数的写法，实现复制数组。目的是为了解除内部变量的引用关系
+ *
+ * @param array $arr            
+ * @return array
+ */
+function array_copy($arr)
+{
+    $newArray = array();
+    foreach ($arr as $key => $value) {
+        if (is_array($value))
+            $newArray[$key] = array_copy($value);
+        else 
+            if (is_object($value))
+                $newArray[$key] = clone $value;
+            else
+                $newArray[$key] = $value;
+    }
+    return $newArray;
+}
+
+/**
+ * 递归方法unset数组里面的元素
+ *
+ * @param array $array            
+ * @param array|string $fields            
+ * @param boolean $remove
+ *            true表示删除数组$array中的$fields属性 false表示保留数组$array中的$fields属性
+ */
+function array_unset_recursive(&$array, $fields, $remove = true)
+{
+    if (! is_array($fields)) {
+        $fields = array(
+            $fields
+        );
+    }
+    foreach ($array as $key => &$value) {
+        if ($remove) {
+            if (in_array($key, $fields, true)) {
+                unset($array[$key]);
+            } else {
+                if (is_array($value)) {
+                    array_unset_recursive($value, $fields, $remove);
+                }
+            }
+        } else {
+            if (! in_array($key, $fields, true)) {
+                unset($array[$key]);
+            } else {
+                if (is_array($value)) {
+                    array_unset_recursive($value, $fields, $remove);
+                }
+            }
+        }
+    }
+}

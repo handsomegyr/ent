@@ -11,6 +11,8 @@ namespace Idatabase\Controller;
 use Zend\View\Model\JsonModel;
 use Zend\Json\Json;
 use My\Common\Controller\Action;
+use Idatabase\Model\PluginData;
+use Zend\Validator\File\Md5;
 
 class CollectionController extends Action
 {
@@ -27,6 +29,8 @@ class CollectionController extends Action
 
     private $_plugin_structure;
 
+    private $_plugin_data;
+
     private $_lock;
 
     private $_mapping;
@@ -36,6 +40,8 @@ class CollectionController extends Action
     private $_plugin_id = '';
 
     private $_sync;
+    
+    private $_gmClient;
 
     public function init()
     {
@@ -52,8 +58,11 @@ class CollectionController extends Action
         $this->_plugin = $this->model('Idatabase\Model\Plugin');
         $this->_plugin_collection = $this->model('Idatabase\Model\PluginCollection');
         $this->_plugin_structure = $this->model('Idatabase\Model\PluginStructure');
+        $this->_plugin_data = $this->model('Idatabase\Model\PluginData');
         $this->_lock = $this->model('Idatabase\Model\Lock');
         $this->_mapping = $this->model('Idatabase\Model\Mapping');
+        
+        $this->_gmClient = $this->gearman()->client();
     }
 
     /**
@@ -127,6 +136,14 @@ class CollectionController extends Action
             if ($lockInfo > 0) {
                 $row['locked'] = true;
             }
+            
+            // 判断当前集合是否默认数据集合，如果是显示正确的集合
+            if ($this->_plugin_data->isDefault(myMongoId($row['_id']))) {
+                $row['defaultSourceData'] = true;
+            } else {
+                $row['defaultSourceData'] = false;
+            }
+            
             $datas[] = $row;
         }
         return $this->rst($datas, $cursor->count(), true);
@@ -154,6 +171,38 @@ class CollectionController extends Action
                 return $this->msg(true, '同步成功');
             } else {
                 return $this->msg(false, '该插件中的未发现有效集合');
+            }
+        } else {
+            return $this->msg(false, '插件编号为空');
+        }
+    }
+
+    /**
+     * 采用Gearman的方式同步插件数据
+     *
+     * @return Ambigous <\Zend\View\Model\JsonModel, multitype:string Ambigous <boolean, bool> >
+     */
+    public function syncGearmanAction()
+    {
+        if (! empty($this->_plugin_id)) {
+            
+            $wait = $this->params()->fromPost('wait', false);
+            $params = array();
+            $params['project_id'] = $this->_project_id;
+            $params['plugin_id'] = $this->_plugin_id;
+            
+            $key = md5(serialize($params));
+            if ($this->cache($key) !== null) {
+                return $this->msg(false, '同步进行中……');
+            } elseif (!empty($wait)) {
+                return $this->msg(true, '同步成功');
+            } else {
+                $jobHandle = $this->_gmClient->doBackground('pluginCollectionSync', serialize($params), $key);
+                $stat = $this->_gmClient->jobStatus($jobHandle);
+                if (isset($stat[0]) && $stat[0]) {
+                    $this->cache()->save(true, $key, 60);
+                }
+                return $this->msg(false, '请求受理'); 
             }
         } else {
             return $this->msg(false, '插件编号为空');
@@ -194,7 +243,7 @@ class CollectionController extends Action
                         'hookLastResponseResult' => $response
                     )
                 ));
-                return $this->msg(true, '触发联动操作成功');
+                return $this->msg(true, '触发联动操作成功' . $response);
             } catch (\Exception $e) {
                 return $this->msg(false, $e->getMessage());
             }
@@ -220,12 +269,13 @@ class CollectionController extends Action
             $isProfessional = filter_var($this->params()->fromPost('isProfessional', false), FILTER_VALIDATE_BOOLEAN);
             $isTree = filter_var($this->params()->fromPost('isTree', false), FILTER_VALIDATE_BOOLEAN);
             $desc = $this->params()->fromPost('desc', null);
-            $orderBy = $this->params()->fromPost('orderBy', 0);
+            $orderBy = intval($this->params()->fromPost('orderBy', 0));
             $isRowExpander = filter_var($this->params()->fromPost('isRowExpander', false), FILTER_VALIDATE_BOOLEAN);
             $rowExpanderTpl = $this->params()->fromPost('rowExpanderTpl', '');
             $plugin = filter_var($this->params()->fromPost('plugin', false), FILTER_VALIDATE_BOOLEAN);
             $plugin_id = $this->_plugin_id;
             $isAutoHook = filter_var($this->params()->fromPost('isAutoHook', false), FILTER_VALIDATE_BOOLEAN);
+            $defaultSourceData = filter_var($this->params()->fromPost('defaultSourceData', false), FILTER_VALIDATE_BOOLEAN);
             $hook = trim($this->params()->fromPost('hook', ''));
             $hookKey = trim($this->params()->fromPost('hookKey', ''));
             
@@ -268,10 +318,21 @@ class CollectionController extends Action
             $datas['isRowExpander'] = $isRowExpander;
             $datas['rowExpanderTpl'] = $rowExpanderTpl;
             $datas['isAutoHook'] = $isAutoHook;
+            $datas['defaultSourceData'] = $defaultSourceData;
             $datas['hook'] = $hook;
             $datas['hookKey'] = $hookKey;
             $datas['plugin_collection_id'] = $this->_plugin_collection->addPluginCollection($datas);
-            $this->_collection->insert($datas);
+            $rst = $this->_collection->insert($datas);
+            
+            // 设定或者取消当前集合为插件默认的数据集合
+            if (! empty($plugin_id)) {
+                if ($defaultSourceData) {
+                    if (isset($rst['_id']) && $rst['_id'] instanceof \MongoId) {
+                        $data_collection_id = $rst['_id']->__toString();
+                        $this->_plugin_data->setDefault($datas['plugin_collection_id'], $data_collection_id);
+                    }
+                }
+            }
             
             return $this->msg(true, '添加集合成功');
         } catch (\Exception $e) {
@@ -309,14 +370,16 @@ class CollectionController extends Action
         $isProfessional = filter_var($this->params()->fromPost('isProfessional', false), FILTER_VALIDATE_BOOLEAN);
         $isTree = filter_var($this->params()->fromPost('isTree', false), FILTER_VALIDATE_BOOLEAN);
         $desc = $this->params()->fromPost('desc', null);
-        $orderBy = $this->params()->fromPost('orderBy', 0);
+        $orderBy = intval($this->params()->fromPost('orderBy', 0));
         $isRowExpander = filter_var($this->params()->fromPost('isRowExpander', false), FILTER_VALIDATE_BOOLEAN);
         $rowExpanderTpl = $this->params()->fromPost('rowExpanderTpl', '');
         $plugin = filter_var($this->params()->fromPost('plugin', false), FILTER_VALIDATE_BOOLEAN);
         $plugin_id = $this->_plugin_id;
         $isAutoHook = filter_var($this->params()->fromPost('isAutoHook', false), FILTER_VALIDATE_BOOLEAN);
+        $defaultSourceData = filter_var($this->params()->fromPost('defaultSourceData', false), FILTER_VALIDATE_BOOLEAN);
         $hook = trim($this->params()->fromPost('hook', ''));
         $hookKey = trim($this->params()->fromPost('hookKey', ''));
+        $plugin_collection_id = trim($this->params()->fromPost('__PLUGIN_COLLECTION_ID__', ''));
         
         if ($_id == null) {
             return $this->msg(false, '无效的集合编号');
@@ -369,8 +432,10 @@ class CollectionController extends Action
         $datas['isRowExpander'] = $isRowExpander;
         $datas['rowExpanderTpl'] = $rowExpanderTpl;
         $datas['isAutoHook'] = $isAutoHook;
+        $datas['defaultSourceData'] = $defaultSourceData;
         $datas['hook'] = $hook;
         $datas['hookKey'] = $hookKey;
+        $datas['plugin_collection_id'] = $plugin_collection_id;
         $datas['plugin_collection_id'] = $this->_plugin_collection->editPluginCollection($datas);
         
         $this->_collection->update(array(
@@ -378,6 +443,15 @@ class CollectionController extends Action
         ), array(
             '$set' => $datas
         ));
+        
+        // 设定或者取消当前集合为插件默认的数据集合
+        if (! empty($plugin_id)) {
+            if ($defaultSourceData) {
+                $this->_plugin_data->setDefault($datas['plugin_collection_id'], $_id);
+            } else {
+                $this->_plugin_data->cancelDefault($datas['plugin_collection_id'], $_id);
+            }
+        }
         
         return $this->msg(true, '编辑信息成功');
     }
@@ -455,9 +529,11 @@ class CollectionController extends Action
     {
         // 检查插件集合中是否包含这些名称信息
         $info = $this->_collection->findOne(array(
+            'project_id' => $this->_project_id,
             'name' => $info,
             'plugin' => true
         ));
+        
         if ($info == null) {
             return false;
         }
@@ -468,9 +544,11 @@ class CollectionController extends Action
     {
         // 检查插件集合中是否包含这些名称信息
         $info = $this->_collection->findOne(array(
+            'project_id' => $this->_project_id,
             'alias' => $info,
             'plugin' => true
         ));
+        
         if ($info == null) {
             return false;
         }

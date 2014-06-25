@@ -64,10 +64,10 @@ Ext.Loader.setConfig({
     }
 
     Ext.require(requires);
-	
 Ext.onReady(function() {
-	Ext.require(['Ext.data.proxy.Ajax', 'Ext.form.field.ComboBox', 'Ext.form.field.VTypes', 'Ext.grid.plugin.RowExpander'], function() {
-
+	//Ext.require(['Ext.ux.form.HtmlEditor.ImageCropDialog','Ext.ux.form.HtmlEditor.ImageDialog','Ext.ux.form.HtmlEditor.imageUpload','Ext.form.UEditor']);
+	Ext.require(['Ext.ux.form.HtmlEditor.ImageCropDialog','Ext.ux.form.HtmlEditor.ImageDialog','Ext.ux.form.HtmlEditor.imageUpload']);
+	Ext.require(['Ext.data.proxy.Ajax', 'Ext.form.field.ComboBox', 'Ext.form.field.VTypes', 'Ext.grid.plugin.RowExpander', 'Ext.toolbar.Toolbar'], function() {
 		Ext.override('Ext.data.proxy.Ajax', {
 			timeout: 60000
 		});
@@ -136,10 +136,10 @@ Ext.onReady(function() {
 		});
 
 	});
-	
-	/*
+
+/*
 	var toolbar;
-	
+
 	setTimeout(function() {
 		toolbar = Ext.widget({
 			xtype: 'toolbar',
@@ -176,103 +176,8 @@ Ext.onReady(function() {
 		};
 		Ext.EventManager.onWindowResize(constrainer);
 	}, 100);
-	*/
-	
-	/*
-	var toolbar;
-            
-	setTimeout(function() {
-		toolbar = Ext.widget({
-			xtype: 'toolbar',
-			border: true,
-			rtl: false,
-			id: 'options-toolbar',
-			floating: true,
-			fixed: true,
-			preventFocusOnActivate: true,
-			draggable: {
-				constrain: true
-			},
-			items: [{
-				xtype: 'combo',
-				rtl: false,
-				width: 170,
-				labelWidth: 45,
-				fieldLabel: 'Theme',
-				displayField: 'name',
-				valueField: 'value',
-				labelStyle: 'cursor:move;',
-				margin: '0 5 0 0',
-				store: Ext.create('Ext.data.Store', {
-					fields: ['value', 'name'],
-					data : [
-						{ value: 'access', name: 'Accessibility' },
-						{ value: 'classic', name: 'Classic' },
-						{ value: 'gray', name: 'Gray' },
-						{ value: 'neptune', name: 'Neptune' }
-					]
-				}),
-				value: theme,
-				listeners: {
-					select: function(combo) {
-						var theme = combo.getValue();
-						if (theme !== defaultTheme) {
-							setParam({ theme: theme });
-						} else {
-							removeParam('theme');
-						}
-					}
-				}
-			}, {
-				xtype: 'button',
-				rtl: false,
-				hidden: !(Ext.repoDevMode || location.href.indexOf('qa.sencha.com') !== -1),
-				enableToggle: true,
-				pressed: rtl,
-				text: 'RTL',
-				margin: '0 5 0 0',
-				listeners: {
-					toggle: function(btn, pressed) {
-						if (pressed) {
-							setParam({ rtl: true });
-						} else {
-							removeParam('rtl');
-						}
-					}
-				}
-			}, {
-				xtype: 'tool',
-				type: 'close',
-				rtl: false,
-				handler: function() {
-					toolbar.destroy();
-				}
-			}],
+*/
 
-			// Extra constraint margins within default constrain region of parentNode
-			constraintInsets: '0 -' + (Ext.getScrollbarSize().width + 4) + ' 0 0'
-		});
-		toolbar.show();
-		toolbar.alignTo(
-			document.body,
-			Ext.optionsToolbarAlign || 'tr-tr',
-			[
-				(Ext.getScrollbarSize().width + 4) * (Ext.rootHierarchyState.rtl ? 1 : -1),
-				-(document.body.scrollTop || document.documentElement.scrollTop)
-			]
-		);
-		
-		var constrainer = function() {
-			toolbar.doConstrain();
-		};
-		
-		Ext.EventManager.onWindowResize(constrainer);
-		toolbar.on('destroy', function() { 
-			Ext.EventManager.removeResizeListener(constrainer);
-		});
-	}, 100);
-	*/
-	
 	var task = new Ext.util.DelayedTask(function(){
 		Ext.TaskManager.start({
 		    run: function(){

@@ -8,55 +8,83 @@ class PluginCollection extends Mongo
 
     protected $collection = IDATABASE_PLUGINS_COLLECTIONS;
 
+    private $_project_plugin;
+
+    private $_plugin_structure;
+
+    private $_plugin_data;
+
+    private $_structure;
+
+    private $_collection;
+
+    private $_project;
+
+    private $_mapping;
+
     public function init()
     {
         $this->_project_plugin = new ProjectPlugin($this->config);
         $this->_plugin_structure = new PluginStructure($this->config);
+        $this->_plugin_data = new PluginData($this->config);
         $this->_structure = new Structure($this->config);
         $this->_collection = new Collection($this->config);
         $this->_project = new Project($this->config);
         $this->_mapping = new Mapping($this->config);
     }
-    
 
     /**
      * 添加集合到插件集合管理
      *
-     * @param array $datas
+     * @param array $datas            
      * @return string
      */
     public function addPluginCollection($datas)
     {
         if (empty($datas['plugin_id']))
             return '';
-    
+        
         unset($datas['project_id']);
+        $datas['_id'] = new \MongoId();
+        $datas['plugin_collection_id'] = $datas['_id']->__toString();
+        array_unset_recursive($datas, array(
+            'isAutoHook',
+            'hook',
+            'hookKey'
+        ));
         $this->insertRef($datas);
         if ($datas['_id'] instanceof \MongoId)
             return $datas['_id']->__toString();
-    
+        
         return '';
     }
-    
+
     /**
      * 添加集合到插件集合管理
      *
-     * @param array $datas
+     * @param array $datas            
      * @return string
      */
     public function editPluginCollection($datas)
     {
-        unset($datas['project_id']);
         $plugin_collection_id = isset($datas['plugin_collection_id']) ? $datas['plugin_collection_id'] : '';
-        if (!empty($plugin_collection_id)) {
-            $this->update(array(
-                    '_id' => myMongoId($plugin_collection_id)
+        array_unset_recursive($datas, array(
+            'project_id',
+            'isAutoHook',
+            'hook',
+            'hookKey'
+        ));
+        if (! empty($plugin_collection_id)) {
+            $rst = $this->update(array(
+                '_id' => myMongoId($plugin_collection_id)
             ), array(
-                    '$set' => $datas
+                '$set' => $datas
+            ), array(
+                'upsert' => true
             ));
-        }
-        else {
-            return $this->addPluginCollection($datas);
+        } else {
+            $rst = $this->addPluginCollection($datas);
+            return $rst;
         }
         return $plugin_collection_id;
     }
@@ -83,6 +111,8 @@ class PluginCollection extends Mongo
             fb('$pluginCollectionInfo is null', 'LOG');
             return false;
         }
+        
+        $pluginCollectionInfo['plugin_collection_id'] = isset($pluginCollectionInfo['plugin_collection_id']) ? $pluginCollectionInfo['plugin_collection_id'] : $pluginCollectionInfo['_id']->__toString();
         
         // 同步数据结构
         $syncPluginStructure = function ($plugin_id, $collection_id) use($pluginCollectionInfo)
@@ -118,6 +148,13 @@ class PluginCollection extends Mongo
                 ), array(
                     'upsert' => true
                 ));
+            }
+            
+            // 插入新的数据
+            if (isset($pluginCollectionInfo['_id']) && $pluginCollectionInfo['_id'] instanceof \MongoId) {
+                $plugin_collection_id = $pluginCollectionInfo['_id']->__toString();
+                $target_collection_id = $collection_id;
+                $this->_plugin_data->copy($plugin_collection_id, $target_collection_id);
             }
             return true;
         };
@@ -164,11 +201,19 @@ class PluginCollection extends Mongo
         if ($pluginCollectionInfo != null) {
             unset($pluginCollectionInfo['_id']);
             $collectionInfo = $pluginCollectionInfo;
-            $collectionInfo['project_id'] = array($project_id);
+            $collectionInfo['project_id'] = array(
+                $project_id
+            );
             
             $check = $this->_collection->findOne(array(
                 'project_id' => $project_id,
                 'alias' => $collectionName
+            ));
+            
+            array_unset_recursive($collectionInfo, array(
+                'isAutoHook',
+                'hook',
+                'hookKey'
             ));
             
             if ($check == null) {
@@ -185,6 +230,9 @@ class PluginCollection extends Mongo
                 $syncPluginStructure($plugin_id, $check['_id']);
                 $createMapping($check['_id'], $collectionName);
             }
+            
+            // 同步默认数据，默认数据将覆盖原有数据
+            
             return $check;
         }
         

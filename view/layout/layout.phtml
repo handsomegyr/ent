@@ -1,37 +1,36 @@
 <?php echo $this->doctype(); ?>
 <html lang="zh-cn">
 <head>
+<meta charset="utf-8">
 <script>
 var isSystem = true;
 var __DOMAIN__ = '<?php echo $this->__DOMAIN__;?>';
-var path = '<?php echo $this->basePath();?>';
-</script>
-
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+var path = '<?php echo $this->basePath();?>';</script>
 <?php
 echo $this->headTitle($this->translate('ICC品牌云平台'))
     ->setSeparator(' - ')
     ->setAutoEscape(false);
+echo $this->headMeta()->appendName('viewport', 'width=device-width, initial-scale=1.0');
 
 echo $this->headLink(array(
-		'rel' => 'shortcut icon',
-		'type' => 'image/vnd.microsoft.icon',
-		'href' => $this->basePath() . '/img/favicon.ico'
-));
-
-echo $this->headLink()
-	->appendStylesheet($this->basePath() . '/css/desktop.css?v='.$this->__VERSION__)
-	->appendStylesheet($this->basePath() . '/css/ext-theme-neptune-all.css?v='.$this->__VERSION__)
-	->appendStylesheet($this->basePath() . '/css/icon.css?v='.$this->__VERSION__)
-	->appendStylesheet($this->basePath() . '/css/BoxSelect.css?v='.$this->__VERSION__);
-
+    'rel' => 'shortcut icon',
+    'type' => 'image/vnd.microsoft.icon',
+    'href' => $this->basePath() . '/img/favicon.ico'
+))
+    ->appendStylesheet($this->basePath() . '/css/desktop.css?v='.$this->__VERSION__)
+    ->appendStylesheet($this->basePath() . '/css/ext-theme-neptune-all.css?v=' . $this->__VERSION__)
+    ->appendStylesheet($this->basePath() . '/css/icon.css?v=' . $this->__VERSION__)
+    ->appendStylesheet($this->basePath() . '/css/BoxSelect.css?v=' . $this->__VERSION__)
+    ->appendStylesheet($this->basePath() . '/css/htmlEditorUpload.css?v=' . $this->__VERSION__);
 echo $this->headScript()
-    ->appendFile($this->basePath() . '/js/build/production/icc/app.js?v='.$this->__VERSION__)
-    ->appendFile($this->basePath() . '/js/resources/common.js?v='.$this->__VERSION__)
-    ->appendFile($this->basePath() . '/js/resources/htmlspecialchars.js?v='.$this->__VERSION__)
-    ->appendFile($this->basePath() . '/css/BoxSelect.js?v='.$this->__VERSION__);
-    //->appendFile($this->basePath() . '/js/resources/include-ext.js?v='.$this->__VERSION__)
-	//->appendFile($this->basePath() . '/js/resources/options-toolbar.js?v='.$this->__VERSION__);
+    ->appendFile($this->basePath() . '/js/build/production/icc/app.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/js/resources/common.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/js/resources/htmlspecialchars.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/css/BoxSelect.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/js/ueditor/ueditor.config.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/js/ueditor/ueditor.all.min.js?v=' . $this->__VERSION__)
+    ->appendFile($this->basePath() . '/js/ueditor/lang/zh-cn/zh-cn.js?v=' . $this->__VERSION__);
+
 ?>
 </head>
 <body>

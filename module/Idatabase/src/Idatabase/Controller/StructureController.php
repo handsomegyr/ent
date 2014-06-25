@@ -10,6 +10,7 @@ namespace Idatabase\Controller;
 
 use Zend\Json\Json;
 use My\Common\Controller\Action;
+use Aws\CloudFront\Exception\Exception;
 
 class StructureController extends Action
 {
@@ -21,7 +22,7 @@ class StructureController extends Action
     private $_plugin_id;
 
     private $_structure;
-    
+
     private $_mapping;
 
     private $_plugin_structure;
@@ -33,6 +34,22 @@ class StructureController extends Action
     private $_collection;
 
     private $_fieldRgex = '/^[a-z]{1}[a-z0-9_\.]*$/i';
+
+    private $_filter = array(
+        '_id',
+        'start',
+        'page',
+        'limit',
+        '__create_time__',
+        '__removed__',
+        '__modify_time__',
+        '__old_id__',
+        '__old_data__',
+        '__project_id__',
+        '__collection_id__',
+        '__plugin_id__',
+        '__plugin_collection_id__'
+    );
 
     public function init()
     {
@@ -67,6 +84,10 @@ class StructureController extends Action
      */
     public function indexAction()
     {
+        $start = intval($this->params()->fromQuery('start', 0));
+        $limit = intval($this->params()->fromQuery('limit', 10));
+        $start = $start > 0 ? $start : 0;
+        
         $rst = array();
         $sort = array(
             'orderBy' => 1,
@@ -78,6 +99,8 @@ class StructureController extends Action
         );
         $cursor = $this->_structure->find($query);
         $cursor->sort($sort);
+        $cursor->skip($start)->limit($limit);
+        
         while ($cursor->hasNext()) {
             $row = $cursor->getNext();
             if (isset($row['rshCollection']) && $row['rshCollection'] != '') {
@@ -141,6 +164,7 @@ class StructureController extends Action
         $datas['searchable'] = filter_var($this->params()->fromPost('searchable', false), FILTER_VALIDATE_BOOLEAN);
         $datas['main'] = filter_var($this->params()->fromPost('main', false), FILTER_VALIDATE_BOOLEAN);
         $datas['required'] = filter_var($this->params()->fromPost('required', false), FILTER_VALIDATE_BOOLEAN);
+        $datas['export'] = filter_var($this->params()->fromPost('export', false), FILTER_VALIDATE_BOOLEAN);
         $datas['isFatherField'] = filter_var($this->params()->fromPost('isFatherField', false), FILTER_VALIDATE_BOOLEAN);
         $datas['rshCollection'] = $this->params()->fromPost('rshCollection', '');
         $datas['isBoxSelect'] = filter_var($this->params()->fromPost('isBoxSelect', ''), FILTER_VALIDATE_BOOLEAN);
@@ -157,6 +181,10 @@ class StructureController extends Action
         $datas['linkageSetValueField'] = trim($this->params()->fromPost('linkageSetValueField', ''));
         $datas['cdnUrl'] = trim($this->params()->fromPost('cdnUrl', ''));
         $datas['xTemplate'] = trim($this->params()->fromPost('xTemplate', ''));
+        
+        if (in_array(strtolower($datas['field']), $this->_filter, true)) {
+            return $this->msg(false, '保留字段不允许作为字段名称,保留字段为：' . join(',', $this->_filter));
+        }
         
         if ($datas['type'] !== 'filefield' && ! empty($datas['cdnUrl'])) {
             return $this->msg(false, '只有当输入类型为“文件类型”时，才需要设定文件资源域名');
@@ -183,6 +211,7 @@ class StructureController extends Action
                 try {
                     $datas['rshSearchCondition'] = Json::decode($datas['rshSearchCondition'], Json::TYPE_ARRAY);
                 } catch (\Exception $e) {
+                    fb(exceptionMsg($e), 'LOG');
                     return $this->msg(false, '关联集合约束查询条件的json格式错误');
                 }
             } else {
@@ -256,6 +285,7 @@ class StructureController extends Action
         $datas['searchable'] = filter_var($this->params()->fromPost('searchable', false), FILTER_VALIDATE_BOOLEAN);
         $datas['main'] = filter_var($this->params()->fromPost('main', false), FILTER_VALIDATE_BOOLEAN);
         $datas['required'] = filter_var($this->params()->fromPost('required', false), FILTER_VALIDATE_BOOLEAN);
+        $datas['export'] = filter_var($this->params()->fromPost('export', false), FILTER_VALIDATE_BOOLEAN);
         $datas['isFatherField'] = filter_var($this->params()->fromPost('isFatherField', false), FILTER_VALIDATE_BOOLEAN);
         $datas['rshCollection'] = $this->params()->fromPost('rshCollection', '');
         $datas['isBoxSelect'] = filter_var($this->params()->fromPost('isBoxSelect', ''), FILTER_VALIDATE_BOOLEAN);
@@ -272,6 +302,10 @@ class StructureController extends Action
         $datas['linkageSetValueField'] = trim($this->params()->fromPost('linkageSetValueField', ''));
         $datas['cdnUrl'] = trim($this->params()->fromPost('cdnUrl', ''));
         $datas['xTemplate'] = trim($this->params()->fromPost('xTemplate', ''));
+        
+        if (in_array(strtolower($datas['field']), $this->_filter, true)) {
+            return $this->msg(false, '保留字段不允许作为字段名称,保留字段为：' . join(',', $this->_filter));
+        }
         
         if ($datas['type'] !== 'filefield' && ! empty($datas['cdnUrl'])) {
             return $this->msg(false, '只有当输入类型为“文件类型”时，才需要设定文件资源域名');
@@ -298,6 +332,7 @@ class StructureController extends Action
                 try {
                     $datas['rshSearchCondition'] = Json::decode($datas['rshSearchCondition'], Json::TYPE_ARRAY);
                 } catch (\Exception $e) {
+                    fb(exceptionMsg($e), 'LOG');
                     return $this->msg(false, '关联集合约束查询条件的json格式错误');
                 }
             } else {
@@ -349,7 +384,7 @@ class StructureController extends Action
         
         // 如果修改了字段名称，那么对于数据集合中的对应字段进行重命名操作
         if ($oldStructureInfo['field'] !== $datas['field']) {
-            if($this->_mapping->getMapping($this->_collection_id)!==null) {
+            if ($this->_mapping->getMapping($this->_collection_id) !== null) {
                 return $this->msg(false, '当前集合开启了映射，无法修改字段名');
             }
             $dataCollection = $this->collection(iCollectionName($this->_collection_id));
@@ -403,6 +438,10 @@ class StructureController extends Action
             
             if ($row['field'] == null) {
                 return $this->msg(false, '请填写字段名称');
+            }
+            
+            if (in_array(strtolower($row['field']), $this->_filter, true)) {
+                return $this->msg(false, '保留字段不允许作为字段名称,保留字段为：' . join(',', $this->_filter));
             }
             
             if (! $this->checkFieldName($row['field'])) {
@@ -474,7 +513,7 @@ class StructureController extends Action
             }
             
             if ($oldStructureInfo['field'] != $row['field']) {
-                if($this->_mapping->getMapping($this->_collection_id)!==null) {
+                if ($this->_mapping->getMapping($this->_collection_id) !== null) {
                     return $this->msg(false, '当前集合开启了映射，无法修改字段名');
                 }
                 $rename[$oldStructureInfo['field']] = $row['field'];
@@ -487,7 +526,7 @@ class StructureController extends Action
             ), array(
                 '$set' => $row
             ));
-
+            
             $this->_plugin_structure->sync($row);
         }
         
@@ -538,6 +577,41 @@ class StructureController extends Action
             }
         }
         return $this->msg(true, '删除字段属性成功');
+    }
+
+    /**
+     * 同步当前数据结构，作为插件的数据结构。
+     */
+    public function syncToPluginAction()
+    {
+        $plugin_collection_id = $this->params()->fromPost('__PLUGIN_COLLECTION_ID__', null);
+        
+        if ($plugin_collection_id == null) {
+            throw new \Exception('插件集合id不存在');
+        }
+        
+        $cursorStructure = $this->_structure->find(array(
+            'collection_id' => $this->_collection_id
+        ));
+        
+        while ($cursorStructure->hasNext()) {
+            $row = $cursorStructure->getNext();
+            array_unset_recursive($row, array(
+                '_id',
+                'plugin_collection_id'
+            ));
+            $row['plugin_collection_id'] = $plugin_collection_id;
+            $rst = $this->_plugin_structure->update(array(
+                'plugin_collection_id' => $plugin_collection_id,
+                'field' => $row['field']
+            ), array(
+                '$set' => $row
+            ), array(
+                'upsert' => true
+            ));
+        }
+        
+        return $this->msg(true, '同步当前集合数据结构->插件数据结构操作已经成功');
     }
 
     /**
