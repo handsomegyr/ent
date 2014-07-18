@@ -18,7 +18,7 @@ class DataController extends Action
     private $_collection;
 
     private $_data;
-    
+
     private $_mapping;
 
     public function init()
@@ -46,8 +46,7 @@ class DataController extends Action
                 $query = $params['query'];
                 $fields = $params['fields'];
                 $exportKey = md5($workload);
-                $exportGearmanKey = md5($scope->_collection_id.serialize($query));
-                
+                $exportGearmanKey = md5($scope->_collection_id . serialize($query));
                 
                 // 获取映射关系，初始化数据集合model
                 $mapCollection = $this->_mapping->findOne(array(
@@ -61,7 +60,6 @@ class DataController extends Action
                     $this->_data->setCollection(iCollectionName($collection_id));
                 }
                 
-                
                 $this->_data->setReadPreference(\MongoClient::RP_SECONDARY_PREFERRED);
                 $cursor = $this->_data->find($query, $fields);
                 $excelDatas = array();
@@ -70,13 +68,12 @@ class DataController extends Action
                 while ($cursor->hasNext()) {
                     $row = $cursor->getNext();
                     $tmp = array();
-                    foreach($fieldNames as $key) {
+                    foreach ($fieldNames as $key) {
                         $tmp[$key] = isset($row[$key]) ? $row[$key] : '';
                     }
                     $excelDatas[] = $tmp;
                     unset($tmp);
                 }
-                
                 // 在导出数据的情况下，将关联数据显示为关联集合的显示字段数据
                 $rshData = array();
                 foreach ($scope->_rshCollection as $_id => $detail) {
@@ -105,8 +102,29 @@ class DataController extends Action
                 
                 // 结束
                 convertToPureArray($excelDatas);
-                array_walk($excelDatas, function (&$value, $key) use($rshData)
+                array_walk($excelDatas, function (&$value, $key) use($rshData, $fields)
                 {
+                    $loop = function ($value, $tmp)
+                    {
+                        $new = $value;
+                        $len = count($tmp);
+                        for ($i = 0; $i < $len; $i ++) {
+                            if (isset($new[$tmp[$i]])) {
+                                $new = $new[$tmp[$i]];
+                            } else {
+                                return '';
+                            }
+                        }
+                        return $new;
+                    };
+                    
+                    foreach ($fields as $k => $v) {
+                        if (strpos($k, '.') !== false) {
+                            $tmp = explode('.', $k);
+                            $value[$k] = $loop($value, $tmp);
+                        }
+                    }
+                    
                     ksort($value);
                     array_walk($value, function (&$cell, $field) use($rshData)
                     {
@@ -117,7 +135,8 @@ class DataController extends Action
                 });
                 
                 $title = array();
-                foreach(array_keys($fields) as $field) {
+                ksort($fields);
+                foreach (array_keys($fields) as $field) {
                     $title[] = isset($scope->_title[$field]) ? $scope->_title[$field] : $field;
                 }
                 

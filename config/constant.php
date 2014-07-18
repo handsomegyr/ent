@@ -62,6 +62,7 @@ defined('EVENT_LOG_DEBUG') || define('EVENT_LOG_DEBUG', 'event_log_debug');
  * 系统全局设定数据库
  */
 defined('SYSTEM_USER') || define('SYSTEM_USER', 'system_user');
+
 /**
  * 服务器配置信息
  */
@@ -70,17 +71,17 @@ defined('MEMCACHED_02') || define('MEMCACHED_02', '127.0.0.2');
 
 defined('REDIS_01') || define('REDIS_01', '10.0.0.2');
 
-defined('MONGOS_DEFAULT_01') || define('MONGOS_DEFAULT_01', 'CentOS6-64.Master:27017');
-defined('MONGOS_DEFAULT_02') || define('MONGOS_DEFAULT_02', 'CentOS6-64.Master:27017');
-defined('MONGOS_DEFAULT_03') || define('MONGOS_DEFAULT_03', 'CentOS6-64.Master:27017');
+defined('MONGOS_DEFAULT_01') || define('MONGOS_DEFAULT_01', '127.0.0.1:27017');
+defined('MONGOS_DEFAULT_02') || define('MONGOS_DEFAULT_02', '127.0.0.1:27017');
+defined('MONGOS_DEFAULT_03') || define('MONGOS_DEFAULT_03', '127.0.0.1:27017');
 
-defined('MONGOS_ANALYSIS_01') || define('MONGOS_ANALYSIS_01', 'CentOS6-64.Master:27017');
-defined('MONGOS_ANALYSIS_02') || define('MONGOS_ANALYSIS_02', 'CentOS6-64.Master:27017');
-defined('MONGOS_ANALYSIS_03') || define('MONGOS_ANALYSIS_03', 'CentOS6-64.Master:27017');
+defined('MONGOS_ANALYSIS_01') || define('MONGOS_ANALYSIS_01', '127.0.0.1:27017');
+defined('MONGOS_ANALYSIS_02') || define('MONGOS_ANALYSIS_02', '127.0.0.1:27017');
+defined('MONGOS_ANALYSIS_03') || define('MONGOS_ANALYSIS_03', '127.0.0.1:27017');
 
-defined('MONGOS_UMA_01') || define('MONGOS_UMA_01', 'CentOS6-64.Master:27017');
-defined('MONGOS_UMA_02') || define('MONGOS_UMA_02', 'CentOS6-64.Master:27017');
-defined('MONGOS_UMA_03') || define('MONGOS_UMA_03', 'CentOS6-64.Master:27017');
+defined('MONGOS_UMA_01') || define('MONGOS_UMA_01', '127.0.0.1:27017');
+defined('MONGOS_UMA_02') || define('MONGOS_UMA_02', '127.0.0.1:27017');
+defined('MONGOS_UMA_03') || define('MONGOS_UMA_03', '127.0.0.1:27017');
 
 defined('GEARMAN_SERVERS')|| define('GEARMAN_SERVERS', '127.0.0.1:4730,127.0.0.1:4730');
 

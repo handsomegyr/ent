@@ -58,7 +58,6 @@ abstract class Mongo
             try {
                 shuffle($clusterInfo['servers']);
                 $dnsString = 'mongodb://' . join(',', $clusterInfo['servers']);
-
                 if (class_exists('\MongoClient')) {
                     $connect = new \MongoClient($dnsString, $options);
                     $connect->setReadPreference(\MongoClient::RP_PRIMARY_PREFERRED); // 读取数据主优先

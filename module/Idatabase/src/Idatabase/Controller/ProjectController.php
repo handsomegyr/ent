@@ -38,6 +38,9 @@ class ProjectController extends Action
         $query = array();
         $isSystem = filter_var($this->params()->fromQuery('isSystem', ''), FILTER_VALIDATE_BOOLEAN);
         $search = $this->params()->fromQuery('query', null);
+        $start = intval($this->params()->fromQuery('start', 0));
+        $limit = intval($this->params()->fromQuery('limit', 10));
+        
         if ($search != null) {
             $search = myMongoRegex($search);
             $searchQuery = array(
@@ -68,7 +71,14 @@ class ProjectController extends Action
             );
         }
         
-        return $this->findAll(IDATABASE_PROJECTS, $query);
+        $cursor = $this->_project->find($query);
+        $total = $cursor->count();
+        $cursor->sort(array(
+            '_id' => - 1
+        ));
+        $cursor->skip($start);
+        $cursor->limit($limit);
+        return $this->rst(iterator_to_array($cursor, false), $total, true);
     }
 
     /**
@@ -226,7 +236,7 @@ class ProjectController extends Action
         $datas = array_values($items);
         return new JsonModel($datas);
     }
-
+    
     /**
      * 验证关联表是否正确
      */
@@ -238,14 +248,14 @@ class ProjectController extends Action
         $source_formIds = $this->params()->fromQuery('forms', array());
         // 是否复制数据
         $isCopyData = intval($this->params()->fromQuery("isCopyData", 0));
-        
+    
         // 是否是同一个数据库
         $isSameProject = ($projectId == $targetProjectId);
-        
+    
         // 复制数据 并且是不同的数据库之间
         if (! $isSameProject && $isCopyData) {
             $associationFormId = $collection->isLackOfAssociationForm($source_formIds); // 获得视图关联表ID
-                                                                                                  // 是否缺乏视图关联表
+            // 是否缺乏视图关联表
             if ($associationFormId) {
                 $rshFormInfo = $collection->findOne(array(
                     '_id' => new MongoId($associationFormId)
@@ -255,9 +265,9 @@ class ProjectController extends Action
                     'msg' => '缺乏视图关联表：' . $rshFormInfo['name']
                 )));
             }
-            
+    
             $rshFormId = $this->_iDatabaseStructure->isLackOfRshForm($source_formIds); // 获得关联表ID
-                                                                                       // 是否缺乏关联表
+            // 是否缺乏关联表
             if ($rshFormId) {
                 $rshFormInfo = $collection->findOne(array(
                     '_id' => new MongoId($rshFormId)
@@ -275,7 +285,7 @@ class ProjectController extends Action
             return $this->msg(true, $isCopyData . $projectId . $targetProjectId);
         }
     }
-
+    
     /**
      * 复制一个项目
      */
@@ -288,10 +298,10 @@ class ProjectController extends Action
             $source_formIds = $this->params()->fromQuery('forms', array());
             // 是否复制数据
             $isCopyData = intval($this->params()->fromQuery("isCopyData", 0));
-            
+    
             // 是否是同一个数据库
             $isSameProject = ($projectId == $targetProjectId);
-            
+    
             if (! empty($projectId)) {
                 $projectInfo = $this->_project->findOne(array(
                     '_id' => myMongoId($projectId)
@@ -306,7 +316,7 @@ class ProjectController extends Action
                     return $this->msg(false, '目标项目不存在，无法复制');
                 }
                 resetTimeMemLimit();
-                
+    
                 // 获取该项目下的所有表,循环复制
                 $formIds = array();
                 $query = array();
@@ -330,10 +340,10 @@ class ProjectController extends Action
                 }
                 // 更新结构表的外键关联信息及数据关系
                 $this->updateRshDataForm($formIds);
-                
+    
                 return $this->msg(true, '复制项目成功');
             } else {
-                return $this->msg(false, '请提交你要复制的项目');                
+                return $this->msg(false, '请提交你要复制的项目');
             }
         } catch (\Exception $e) {
             $exceptMsg = exceptionMsg($e);
@@ -351,7 +361,7 @@ class ProjectController extends Action
         $datas = array();
         $datas['project_id']  = $targetProjectId;
         $collection = $this->model('Idatabase\Model\Collection');
-        
+    
         $check = $collection->count(array(
             'project_id'=>$targetProjectId,
             '$or'=>array(
@@ -425,7 +435,7 @@ class ProjectController extends Action
             $row = $cursor->getNext();
             $source_id = $row['_id']->__toString();
             unset($row['_id']);
-            	
+             
             $row['formId']     = $formId;
             $row['createTime'] = new MongoDate();
             $this->_iDatabaseQuickInput->insert($row);
