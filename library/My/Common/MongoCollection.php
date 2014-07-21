@@ -155,6 +155,9 @@ class MongoCollection extends \MongoCollection
      * @var int
      */
     const timeout = 6000000;
+    
+    const socketTimeoutMS = 6000000;
+    
 
     /**
      * 强制同步写入操作
@@ -587,10 +590,11 @@ class MongoCollection extends \MongoCollection
      *
      * @see MongoCollection::findOne()
      */
-    public function findOne($query = NULL, $fields = NULL)
+    public function findOne($query = NULL, $fields = NULL, array $options = NULL)
     {
         $fields = empty($fields) ? array() : $fields;
-        return parent::findOne($this->appendQuery($query), $fields);
+        $options = empty($options) ? array() : $options;
+        return parent::findOne($this->appendQuery($query), $fields, $options);
     }
 
     /**
@@ -695,7 +699,7 @@ class MongoCollection extends \MongoCollection
         
         $default = array(
             'fsync' => self::fsync,
-            'timeout' => self::timeout
+            //'timeout' => self::timeout
         );
         $options = ($options === NULL) ? $default : array_merge($default, $options);
         
@@ -739,7 +743,7 @@ class MongoCollection extends \MongoCollection
         
         $default = array(
             'fsync' => self::fsync,
-            'timeout' => self::timeout
+            //'timeout' => self::timeout
         );
         $options = ($options === NULL) ? $default : array_merge($default, $options);
         
@@ -824,7 +828,7 @@ class MongoCollection extends \MongoCollection
         $default = array(
             'justOne' => self::justOne,
             'fsync' => self::fsync,
-            'timeout' => self::timeout
+            //'timeout' => self::timeout
         );
         
         $options = ($options === NULL) ? $default : array_merge($default, $options);
@@ -859,7 +863,7 @@ class MongoCollection extends \MongoCollection
         $default = array(
             'justOne' => self::justOne,
             'fsync' => self::fsync,
-            'timeout' => self::timeout
+            //'timeout' => self::timeout
         );
         
         $options = ($options === NULL) ? $default : array_merge($default, $options);
@@ -892,7 +896,7 @@ class MongoCollection extends \MongoCollection
             'upsert' => self::upsert,
             'multiple' => self::multiple,
             'fsync' => self::fsync,
-            'timeout' => self::timeout
+            //'socketTimeoutMS' => self::socketTimeoutMS
         );
         
         $options = ($options === NULL) ? $default : array_merge($default, $options);
